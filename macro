@@ -10,26 +10,24 @@ local listeningMacro = nil
 
 local Config = {
     Snowball = { Key = Enum.KeyCode.ButtonY, Label = "❄️ Snowball" },
-    Combo    = { Key = Enum.KeyCode.Thumbstick1, Label = "⚔️ Combo (L3)" },
+    Board    = { Key = Enum.KeyCode.Thumbstick1, Label = "🛹 Board Combo" },
     RPG      = { Key = Enum.KeyCode.DPadLeft, Label = "🚀 RPG (DPad Left)" },
-    NewCombo = { Key = Enum.KeyCode.DPadDown, Label = "🔥 New Combo" }
+    Combo    = { Key = Enum.KeyCode.DPadDown, Label = "🔥 Combo" }
 }
 
--- Pro-Tier Projectile & Advanced Ballistics Settings
+-- High-End Predictive Aim Engine Settings (Starts OFF by default)
 local AimSettings = {
-    Enabled = true,
-    Radius = 500,                  -- Wide FOV detection threshold
-    Smoothing = 0.35,              -- Ultra-responsive snap/tracking interpolation
-    PredictionFactor = 0.16,       -- Advanced velocity movement leading
-    GravityDrop = 34.2,            -- Workspace gravity parabolic drop compensation
-    WallCheck = true,              -- Strict line-of-sight check
+    Enabled = false,               -- Off by default
+    Radius = 500,                  -- FOV Range
+    Smoothing = 0.15,              -- Lightning-fast interpolation for zero lag
+    PredictionMultiplier = 1.0,    -- Exact movement vector scaling
+    WallCheck = true,
     RadiusPresets = { 150, 300, 500, 800, 9999 }
 }
 
 local currentBestTarget = nil
-local targetVelocities = {}
 
--- Elite Pro-Tier Physics & Tracking Engine
+-- High-Precision Predictive Tracking Core
 RunService.RenderStepped:Connect(function(dt)
     if not AimSettings.Enabled then
         currentBestTarget = nil
@@ -48,7 +46,7 @@ RunService.RenderStepped:Connect(function(dt)
             if hum and hum.Health > 0 then
                 local targetRoot = plr.Character.HumanoidRootPart
                 
-                -- Strict Line-of-Sight Wall Check
+                -- Strict Line-of-Sight Check
                 local hasLOS = true
                 if AimSettings.WallCheck and root then
                     local raycastParams = RaycastParams.new()
@@ -59,21 +57,11 @@ RunService.RenderStepped:Connect(function(dt)
                 end
 
                 if hasLOS then
-                    -- Velocity Tracking
-                    local lastPos = targetVelocities[plr] and targetVelocities[plr].pos or targetRoot.Position
-                    local currentPos = targetRoot.Position
-                    local velocity = (currentPos - lastPos) / math.max(dt, 0.001)
-                    targetVelocities[plr] = { pos = currentPos, vel = velocity }
+                    -- Direct spatial velocity extraction for precise placement
+                    local velocity = targetRoot.AssemblyLinearVelocity
+                    local exactFuturePos = targetRoot.Position + (velocity * (dt * AimSettings.PredictionMultiplier))
 
-                    -- Elite Time-of-Flight & Parabolic Arc Math
-                    local distance = (currentPos - root.Position).Magnitude
-                    local timeToTarget = distance / 180.0
-                    
-                    local predictedPos = currentPos + (velocity * (timeToTarget * AimSettings.PredictionFactor))
-                    local dropCorrection = 0.5 * AimSettings.GravityDrop * (timeToTarget ^ 2)
-                    predictedPos = predictedPos + Vector3.new(0, dropCorrection, 0)
-
-                    local screenPos, onScreen = Camera:WorldToViewportPoint(predictedPos)
+                    local screenPos, onScreen = Camera:WorldToViewportPoint(exactFuturePos)
                     if onScreen then
                         local dist = (Vector2.new(screenPos.X, screenPos.Y) - viewportCenter).Magnitude
                         if dist < shortestDist then
@@ -143,10 +131,8 @@ local function runSnowball()
     isRunning = false
 end
 
--- ==========================================
--- ELITE COMBO MACRO (Slot 4 Equipping Buffer Fixed)
--- ==========================================
-local function runCombo()
+-- Board Combo Macro (Slot 4 Buffer Fixed)
+local function runBoard()
     if isRunning then return end
     isRunning = true
 
@@ -169,9 +155,8 @@ local function runCombo()
     end)
     task.wait(0.01)
 
-    -- Slot 4 Equip Sequence with Stable Draw Buffer
     pressKey(Enum.KeyCode.Four)
-    task.wait(0.09) -- Prevents input truncation during weapon pull-out animation
+    task.wait(0.09)
 
     pcall(function()
         local l = UIS:GetMouseLocation()
@@ -239,7 +224,7 @@ local function runRpg()
     isRunning = false
 end
 
-local function runNewCombo()
+local function runCombo()
     if isRunning then return end
     isRunning = true
     local spamming = true
@@ -287,9 +272,9 @@ local function runNewCombo()
     isRunning = false
 end
 
-print("Exotica: Pro Master Suite Initialized!")
+print("Exotica: Elite Master Suite Initialized!")
 
--- Full UI Suite Initialization with Draggable Panel, ON/OFF Switch, and FOV Selector
+-- UI Interface Initialization
 local core = gethui and gethui() or game:GetService("CoreGui")
 pcall(function()
     local sg = Instance.new("ScreenGui")
@@ -297,35 +282,6 @@ pcall(function()
     sg.ResetOnSpawn = false
     sg.Parent = core
 
-    -- Notification Banner
-    local notif = Instance.new("TextLabel", sg)
-    notif.Size = UDim2.new(0, 320, 0, 45)
-    notif.Position = UDim2.new(0.5, -160, 0.1, 0)
-    notif.BackgroundColor3 = Color3.fromRGB(15, 15, 22)
-    notif.BackgroundTransparency = 1
-    notif.Font = Enum.Font.GothamBold
-    notif.Text = "⚡ Pro Ballistics Suite Active ⚡"
-    notif.TextColor3 = Color3.fromRGB(0, 220, 255)
-    notif.TextSize = 13
-    notif.TextTransparency = 1
-    Instance.new("UICorner", notif).CornerRadius = UDim.new(0, 10)
-    local nStroke = Instance.new("UIStroke", notif)
-    nStroke.Color = Color3.fromRGB(0, 200, 255)
-    nStroke.Transparency = 1
-    nStroke.Thickness = 2
-
-    task.spawn(function()
-        local twInfo = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-        TweenService:Create(notif, twInfo, {BackgroundTransparency = 0.1, TextTransparency = 0}):Play()
-        TweenService:Create(nStroke, twInfo, {Transparency = 0.3}):Play()
-        task.wait(3.0)
-        TweenService:Create(notif, twInfo, {BackgroundTransparency = 1, TextTransparency = 1}):Play()
-        TweenService:Create(nStroke, twInfo, {Transparency = 1}):Play()
-        task.wait(0.6)
-        notif:Destroy()
-    end)
-
-    -- Floating Gear Toggle Button (Fully Draggable)
     local toggleBtn = Instance.new("TextButton", sg)
     toggleBtn.Size = UDim2.new(0, 45, 0, 45)
     toggleBtn.Position = UDim2.new(0.02, 0, 0.28, 0)
@@ -364,7 +320,6 @@ pcall(function()
         end
     end)
 
-    -- Main Control Panel Frame
     local f = Instance.new("Frame", sg)
     f.Size = UDim2.new(0, 260, 0, 420)
     f.Position = UDim2.new(0.02, 55, 0.28, 0)
@@ -438,11 +393,11 @@ pcall(function()
     end
 
     createMacroRow("Snowball", Config.Snowball, function() task.spawn(runSnowball) end)
-    createMacroRow("Combo", Config.Combo, function() task.spawn(runCombo) end)
+    createMacroRow("Board", Config.Board, function() task.spawn(runBoard) end)
     createMacroRow("RPG", Config.RPG, function() task.spawn(runRpg) end)
-    createMacroRow("NewCombo", Config.NewCombo, function() task.spawn(runNewCombo) end)
+    createMacroRow("Combo", Config.Combo, function() task.spawn(runCombo) end)
 
-    -- Aim Toggle Row
+    -- Aim Toggle Row (Defaults to OFF)
     local aimRow = Instance.new("Frame", container)
     aimRow.Size = UDim2.new(1, 0, 0, 40)
     aimRow.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
@@ -462,9 +417,9 @@ pcall(function()
     local aimToggleBtn = Instance.new("TextButton", aimRow)
     aimToggleBtn.Size = UDim2.new(0.4, 0, 0.75, 0)
     aimToggleBtn.Position = UDim2.new(0.58, 0, 0.125, 0)
-    aimToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 100)
+    aimToggleBtn.BackgroundColor3 = Color3.fromRGB(150, 50, 50) -- Red for OFF
     aimToggleBtn.Font = Enum.Font.GothamBold
-    aimToggleBtn.Text = "ON"
+    aimToggleBtn.Text = "OFF"
     aimToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     aimToggleBtn.TextSize = 11
     aimToggleBtn.AutoButtonColor = false
@@ -535,12 +490,12 @@ pcall(function()
         else
             if k == Config.Snowball.Key then
                 task.spawn(runSnowball)
-            elseif k == Config.Combo.Key then
-                task.spawn(runCombo)
+            elseif k == Config.Board.Key then
+                task.spawn(runBoard)
             elseif k == Config.RPG.Key then
                 task.spawn(runRpg)
-            elseif k == Config.NewCombo.Key then
-                task.spawn(runNewCombo)
+            elseif k == Config.Combo.Key then
+                task.spawn(runCombo)
             end
         end
     end)
