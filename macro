@@ -15,27 +15,12 @@ local Config = {
     NewCombo = { Key = Enum.KeyCode.DPadDown, Label = "🔥 New Combo" }
 }
 
--- Pro Combat Profiles with Dual Mode Support
-local AimProfiles = {
-    ["RawSnap"] = {
-        FOV = 600,
-        Smoothness = 1.0,
-        Prediction = 0.0,
-        Gravity = 0.0,
-        UseLeading = false
-    },
-    ["BallisticLead"] = {
-        FOV = 500,
-        Smoothness = 14.0,
-        Prediction = 0.16,
-        Gravity = 34.2,
-        UseLeading = true
-    }
-}
-
-local currentProfile = "BallisticLead"
+-- Elite Tuned Tracking Settings (Starts ON as requested)
 local AimSettings = {
     Enabled = true,
+    Radius = 500,                 -- FOV Range
+    Smoothing = 0.35,             -- Snappy, high-responsiveness tracking coefficient
+    PredictionFactor = 0.12,      -- Clean movement leading
     WallCheck = true,
     RadiusPresets = { 150, 300, 500, 800, 9999 }
 }
@@ -43,15 +28,15 @@ local AimSettings = {
 local currentBestTarget = nil
 local targetVelocities = {}
 
+-- Elite High-Response Tracking Engine
 RunService.RenderStepped:Connect(function(dt)
     if not AimSettings.Enabled then
         currentBestTarget = nil
         return
     end
 
-    local profile = AimProfiles[currentProfile]
     local closestTarget = nil
-    local shortestDist = profile.FOV
+    local shortestDist = AimSettings.Radius
     local viewportCenter = Camera.ViewportSize / 2
     local char = p.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
@@ -62,6 +47,7 @@ RunService.RenderStepped:Connect(function(dt)
             if hum and hum.Health > 0 then
                 local targetRoot = plr.Character.HumanoidRootPart
                 
+                -- Line-of-Sight Check
                 local hasLOS = true
                 if AimSettings.WallCheck and root then
                     local raycastParams = RaycastParams.new()
@@ -77,16 +63,10 @@ RunService.RenderStepped:Connect(function(dt)
                     local velocity = (currentPos - lastPos) / math.max(dt, 0.001)
                     targetVelocities[plr] = { pos = currentPos, vel = velocity }
 
-                    local targetPos = currentPos
-                    if profile.UseLeading then
-                        local distance = (currentPos - root.Position).Magnitude
-                        local timeToTarget = distance / 180.0
-                        targetPos = currentPos + (velocity * (timeToTarget * profile.Prediction))
-                        local dropCorrection = 0.5 * profile.Gravity * (timeToTarget ^ 2)
-                        targetPos = targetPos + Vector3.new(0, dropCorrection, 0)
-                    end
-
-                    local screenPos, onScreen = Camera:WorldToViewportPoint(targetPos)
+                    -- Predictive aiming offset
+                    local predictedPos = currentPos + (velocity * AimSettings.PredictionFactor)
+                    local screenPos, onScreen = Camera:WorldToViewportPoint(predictedPos)
+                    
                     if onScreen then
                         local dist = (Vector2.new(screenPos.X, screenPos.Y) - viewportCenter).Magnitude
                         if dist < shortestDist then
@@ -101,8 +81,7 @@ RunService.RenderStepped:Connect(function(dt)
 
     if closestTarget then
         if currentBestTarget then
-            local alpha = math.clamp(dt * profile.Smoothness, 0, 1)
-            currentBestTarget = currentBestTarget:Lerp(closestTarget, alpha)
+            currentBestTarget = currentBestTarget:Lerp(closestTarget, AimSettings.Smoothing)
         else
             currentBestTarget = closestTarget
         end
@@ -158,17 +137,15 @@ local function runSnowball()
 end
 
 -- ==========================================
--- EXACT TRANSLATION OF YOUR XML/AHK COMBO MACRO WITH FIXED SLOT 4 EQUIP COOLDOWN
+-- PERFECTED COMBO MACRO (Slot 4 Equipping Buffer Fixed)
 -- ==========================================
 local function runCombo()
     if isRunning then return end
     isRunning = true
 
-    -- 1 Key
     pressKey(Enum.KeyCode.One)
     task.wait(0.015)
 
-    -- First Left Click Down/Up (0.012s delay)
     pcall(function()
         local l = UIS:GetMouseLocation()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
@@ -177,7 +154,6 @@ local function runCombo()
     end)
     task.wait(0.01)
 
-    -- Second Left Click Down/Up (0.012s delay)
     pcall(function()
         local l = UIS:GetMouseLocation()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
@@ -186,11 +162,9 @@ local function runCombo()
     end)
     task.wait(0.01)
 
-    -- 4 Key
     pressKey(Enum.KeyCode.Four)
-    task.wait(0.09) -- PROPER EQUIP BUFFER: Prevents weapon from failing to register / hit!
+    task.wait(0.09) -- Weapon equip delay buffer
 
-    -- Mouse Button 5 (XButton2 / Forward Side Button -> Index 4)
     pcall(function()
         local l = UIS:GetMouseLocation()
         VIM:SendMouseButtonEvent(l.X, l.Y, 4, true, game, 0)
@@ -199,11 +173,9 @@ local function runCombo()
     end)
     task.wait(0.02)
 
-    -- 8 Key
     pressKey(Enum.KeyCode.Eight)
     task.wait(0.015)
 
-    -- Left Click (0.02s delay)
     pcall(function()
         local l = UIS:GetMouseLocation()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
@@ -212,7 +184,6 @@ local function runCombo()
     end)
     task.wait(0.01)
 
-    -- Left Click (0.01s delay)
     pcall(function()
         local l = UIS:GetMouseLocation()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
@@ -221,11 +192,9 @@ local function runCombo()
     end)
     task.wait(0.01)
 
-    -- 0 Key
     pressKey(Enum.KeyCode.Zero)
     task.wait(0.015)
 
-    -- Left Click (0.01s delay)
     pcall(function()
         local l = UIS:GetMouseLocation()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
@@ -234,11 +203,9 @@ local function runCombo()
     end)
     task.wait(0.01)
 
-    -- 6 Key
     pressKey(Enum.KeyCode.Six)
     task.wait(0.015)
 
-    -- Final Left Click (Down & Up)
     pcall(function()
         local l = UIS:GetMouseLocation()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
@@ -312,9 +279,9 @@ local function runNewCombo()
     isRunning = false
 end
 
-print("Exotica: Perfected Combo & Ballistics Suite Loaded!")
+print("Exotica: Ultimate Master Suite Loaded Successfully!")
 
--- UI Setup
+-- UI Setup with Restored ON/OFF Switch and FOV Range Button
 local core = gethui and gethui() or game:GetService("CoreGui")
 pcall(function()
     local sg = Instance.new("ScreenGui")
@@ -378,7 +345,7 @@ pcall(function()
     title.Size = UDim2.new(1, 0, 0, 40)
     title.BackgroundTransparency = 1
     title.Font = Enum.Font.GothamBold
-    title.Text = "EXOTICA // PRO SUITE"
+    title.Text = "EXOTICA // MASTER SUITE"
     title.TextColor3 = Color3.fromRGB(255, 255, 255)
     title.TextSize = 14
     title.AutoButtonColor = false
@@ -437,71 +404,60 @@ pcall(function()
     createMacroRow("RPG", Config.RPG, function() task.spawn(runRpg) end)
     createMacroRow("NewCombo", Config.NewCombo, function() task.spawn(runNewCombo) end)
 
-    local modeRow = Instance.new("Frame", container)
-    modeRow.Size = UDim2.new(1, 0, 0, 40)
-    modeRow.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
-    modeRow.BackgroundTransparency = 0.2
-    modeRow.BorderSizePixel = 0
-    Instance.new("UICorner", modeRow).CornerRadius = UDim.new(0, 10)
+    -- Aim ON/OFF Switch Row
+    local aimRow = Instance.new("Frame", container)
+    aimRow.Size = UDim2.new(1, 0, 0, 40)
+    aimRow.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
+    aimRow.BackgroundTransparency = 0.2
+    aimRow.BorderSizePixel = 0
+    Instance.new("UICorner", aimRow).CornerRadius = UDim.new(0, 10)
 
-    local modeLabel = Instance.new("TextButton", modeRow)
-    modeLabel.Size = UDim2.new(0.55, -5, 1, 0)
-    modeLabel.BackgroundTransparency = 1
-    modeLabel.Font = Enum.Font.GothamBold
-    modeLabel.Text = "  ⚡ Mode"
-    modeLabel.TextColor3 = Color3.fromRGB(240, 240, 240)
-    modeLabel.TextSize, modeLabel.TextXAlignment = 12, Enum.TextXAlignment.Left
-    modeLabel.AutoButtonColor = false
+    local aimLabel = Instance.new("TextButton", aimRow)
+    aimLabel.Size = UDim2.new(0.55, -5, 1, 0)
+    aimLabel.BackgroundTransparency = 1
+    aimLabel.Font = Enum.Font.GothamBold
+    aimLabel.Text = "  🎯 Aimbot"
+    aimLabel.TextColor3 = Color3.fromRGB(240, 240, 240)
+    aimLabel.TextSize, aimLabel.TextXAlignment = 12, Enum.TextXAlignment.Left
+    aimLabel.AutoButtonColor = false
 
-    local modeBtn = Instance.new("TextButton", modeRow)
-    modeBtn.Size = UDim2.new(0.4, 0, 0.75, 0)
-    modeBtn.Position = UDim2.new(0.58, 0, 0.125, 0)
-    modeBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 200)
-    modeBtn.Font = Enum.Font.GothamBold
-    modeBtn.Text = currentProfile
-    modeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    modeBtn.TextSize = 10
-    modeBtn.AutoButtonColor = false
-    Instance.new("UICorner", modeBtn).CornerRadius = UDim.new(0, 8)
+    local aimToggleBtn = Instance.new("TextButton", aimRow)
+    aimToggleBtn.Size = UDim2.new(0.4, 0, 0.75, 0)
+    aimToggleBtn.Position = UDim2.new(0.58, 0, 0.125, 0)
+    aimToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 100)
+    aimToggleBtn.Font = Enum.Font.GothamBold
+    aimToggleBtn.Text = "ON"
+    aimToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    aimToggleBtn.TextSize = 11
+    aimToggleBtn.AutoButtonColor = false
+    Instance.new("UICorner", aimToggleBtn).CornerRadius = UDim.new(0, 8)
 
-    modeBtn.Activated:Connect(function()
-        if currentProfile == "BallisticLead" then
-            currentProfile = "RawSnap"
-            modeBtn.Text = "RawSnap (Strong)"
-            modeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+    aimToggleBtn.Activated:Connect(function()
+        AimSettings.Enabled = not AimSettings.Enabled
+        if AimSettings.Enabled then
+            aimToggleBtn.Text = "ON"
+            aimToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 100)
         else
-            currentProfile = "BallisticLead"
-            modeBtn.Text = "BallisticLead"
-            modeBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 200)
+            aimToggleBtn.Text = "OFF"
+            aimToggleBtn.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
         end
     end)
 
-    UIS.InputBegan:Connect(function(input, gpe)
-        local k = input.KeyCode
-        if k == Enum.KeyCode.Unknown then return end
+    -- FOV Range Button Row
+    local fovRow = Instance.new("Frame", container)
+    fovRow.Size = UDim2.new(1, 0, 0, 40)
+    fovRow.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
+    fovRow.BackgroundTransparency = 0.2
+    fovRow.BorderSizePixel = 0
+    Instance.new("UICorner", fovRow).CornerRadius = UDim.new(0, 10)
 
-        if listeningMacro then
-            Config[listeningMacro].Key = k
-            keyButtonRefs[listeningMacro].Text = tostring(k.Name)
-            keyButtonRefs[listeningMacro].TextColor3 = Color3.fromRGB(0, 220, 255)
-            listeningMacro = nil
-        else
-            if k == Config.Snowball.Key then
-                task.spawn(runSnowball)
-            elseif k == Config.Combo.Key then
-                task.spawn(runCombo)
-            elseif k == Config.RPG.Key then
-                task.spawn(runRpg)
-            elseif k == Config.NewCombo.Key then
-                task.spawn(runNewCombo)
-            end
-        end
-    end)
+    local fovLabel = Instance.new("TextButton", fovRow)
+    fovLabel.Size = UDim2.new(0.55, -5, 1, 0)
+    fovLabel.BackgroundTransparency = 1
+    fovLabel.Font = Enum.Font.GothamBold
+    fovLabel.Text = "  🔍 FOV Range"
+    fovLabel.TextColor3 = Color3.fromRGB(240, 240, 240)
+    fovLabel.TextSize, fovLabel.TextXAlignment = 12, Enum.TextXAlignment.Left
+    fovLabel.AutoButtonColor = false
 
-    local visible = true
-    toggleBtn.Activated:Connect(function()
-        if tMoved then return end
-        visible = not visible
-        f.Visible = visible
-    end)
-end)
+    local fovBtn = Instance.new("TextButton", fovRow)
