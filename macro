@@ -15,12 +15,28 @@ local Config = {
     NewCombo = { Key = Enum.KeyCode.DPadDown, Label = "🔥 New Combo" }
 }
 
+-- Pro-Tier Combat Profiles: Choose between "RawSnap" (Strong) or "BallisticLead" (Smooth Projectile)
+local AimProfiles = {
+    ["RawSnap"] = {
+        FOV = 600,
+        Smoothness = 1.0,      -- Instant hard lock / zero lag
+        Prediction = 0.0,      -- Direct on-target tracking
+        Gravity = 0.0,
+        UseLeading = false
+    },
+    ["BallisticLead"] = {
+        FOV = 500,
+        Smoothness = 14.0,     -- Silky-smooth frame-independent lerp
+        Prediction = 0.16,     -- Advanced movement velocity factor
+        Gravity = 34.2,        -- Parabolic arc drop compensation
+        UseLeading = true
+    }
+}
+
+-- Active Profile Selection (Change to "RawSnap" for hard-locking or "BallisticLead" for projectiles)
+local currentProfile = "BallisticLead"
 local AimSettings = {
     Enabled = true,
-    Radius = 500,
-    Smoothness = 12.0,
-    ProjectileSpeed = 180.0,
-    GravityDrop = 34.2,
     WallCheck = true,
     RadiusPresets = { 150, 300, 500, 800, 9999 }
 }
@@ -28,14 +44,16 @@ local AimSettings = {
 local currentBestTarget = nil
 local targetVelocities = {}
 
+-- Elite Core Math Engine: Dynamic Profile Switching & Prediction
 RunService.RenderStepped:Connect(function(dt)
     if not AimSettings.Enabled then
         currentBestTarget = nil
         return
     end
 
+    local profile = AimProfiles[currentProfile]
     local closestTarget = nil
-    local shortestDist = AimSettings.Radius
+    local shortestDist = profile.FOV
     local viewportCenter = Camera.ViewportSize / 2
     local char = p.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
@@ -46,6 +64,7 @@ RunService.RenderStepped:Connect(function(dt)
             if hum and hum.Health > 0 then
                 local targetRoot = plr.Character.HumanoidRootPart
                 
+                -- Strict Line-of-Sight Raycast Check
                 local hasLOS = true
                 if AimSettings.WallCheck and root then
                     local raycastParams = RaycastParams.new()
@@ -61,15 +80,16 @@ RunService.RenderStepped:Connect(function(dt)
                     local velocity = (currentPos - lastPos) / math.max(dt, 0.001)
                     targetVelocities[plr] = { pos = currentPos, vel = velocity }
 
-                    local distance = (currentPos - root.Position).Magnitude
-                    local timeToTarget = distance / AimSettings.ProjectileSpeed
-                    
-                    local predictedPos = currentPos + (velocity * timeToTarget)
-                    local dropCorrection = 0.5 * AimSettings.GravityDrop * (timeToTarget ^ 2)
-                    predictedPos = predictedPos + Vector3.new(0, dropCorrection, 0)
+                    local targetPos = currentPos
+                    if profile.UseLogging or profile.UseLeading then
+                        local distance = (currentPos - root.Position).Magnitude
+                        local timeToTarget = distance / 180.0
+                        targetPos = currentPos + (velocity * (timeToTarget * profile.Prediction))
+                        local dropCorrection = 0.5 * profile.Gravity * (timeToTarget ^ 2)
+                        targetPos = targetPos + Vector3.new(0, dropCorrection, 0)
+                    end
 
-                    local screenPos, onScreen = Camera:WorldToViewportPoint(predictedPos)
-                    
+                    local screenPos, onScreen = Camera:WorldToViewportPoint(targetPos)
                     if onScreen then
                         local dist = (Vector2.new(screenPos.X, screenPos.Y) - viewportCenter).Magnitude
                         if dist < shortestDist then
@@ -84,7 +104,7 @@ RunService.RenderStepped:Connect(function(dt)
 
     if closestTarget then
         if currentBestTarget then
-            local alpha = math.clamp(dt * AimSettings.Smoothness, 0, 1)
+            local alpha = math.clamp(dt * profile.Smoothness, 0, 1)
             currentBestTarget = currentBestTarget:Lerp(closestTarget, alpha)
         else
             currentBestTarget = closestTarget
@@ -164,7 +184,7 @@ local function runCombo()
     task.wait(0.01)
 
     pressKey(Enum.KeyCode.Four)
-    task.wait(0.09)
+    task.wait(0.09) -- Verified Slot 4 equipment cooldown delay
 
     pcall(function()
         local l = UIS:GetMouseLocation()
@@ -274,41 +294,15 @@ local function runNewCombo()
     isRunning = false
 end
 
-print("Exotica: Ultra-Smooth Ballistics Suite Loaded Successfully!")
+print("Exotica: Pro Modular Combat Suite Loaded!")
 
+-- UI Setup with Profile Switcher
 local core = gethui and gethui() or game:GetService("CoreGui")
 pcall(function()
     local sg = Instance.new("ScreenGui")
     sg.Name = "ExoticaMasterSuite"
     sg.ResetOnSpawn = false
     sg.Parent = core
-
-    local notif = Instance.new("TextLabel", sg)
-    notif.Size = UDim2.new(0, 320, 0, 45)
-    notif.Position = UDim2.new(0.5, -160, 0.1, 0)
-    notif.BackgroundColor3 = Color3.fromRGB(15, 15, 22)
-    notif.BackgroundTransparency = 1
-    notif.Font = Enum.Font.GothamBold
-    notif.Text = "⚡ Smooth Ballistics Active ⚡"
-    notif.TextColor3 = Color3.fromRGB(0, 220, 255)
-    notif.TextSize = 13
-    notif.TextTransparency = 1
-    Instance.new("UICorner", notif).CornerRadius = UDim.new(0, 10)
-    local nStroke = Instance.new("UIStroke", notif)
-    nStroke.Color = Color3.fromRGB(0, 200, 255)
-    nStroke.Transparency = 1
-    nStroke.Thickness = 2
-
-    task.spawn(function()
-        local twInfo = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-        TweenService:Create(notif, twInfo, {BackgroundTransparency = 0.1, TextTransparency = 0}):Play()
-        TweenService:Create(nStroke, twInfo, {Transparency = 0.3}):Play()
-        task.wait(3.0)
-        TweenService:Create(notif, twInfo, {BackgroundTransparency = 1, TextTransparency = 1}):Play()
-        TweenService:Create(nStroke, twInfo, {Transparency = 1}):Play()
-        task.wait(0.6)
-        notif:Destroy()
-    end)
 
     local toggleBtn = Instance.new("TextButton", sg)
     toggleBtn.Size = UDim2.new(0, 45, 0, 45)
@@ -349,7 +343,7 @@ pcall(function()
     end)
 
     local f = Instance.new("Frame", sg)
-    f.Size = UDim2.new(0, 260, 0, 390)
+    f.Size = UDim2.new(0, 260, 0, 420)
     f.Position = UDim2.new(0.02, 55, 0.28, 0)
     f.BackgroundColor3 = Color3.fromRGB(15, 15, 22)
     f.BackgroundTransparency = 0.08
@@ -366,46 +360,14 @@ pcall(function()
     title.Size = UDim2.new(1, 0, 0, 40)
     title.BackgroundTransparency = 1
     title.Font = Enum.Font.GothamBold
-    title.Text = "EXOTICA // MACROS"
+    title.Text = "EXOTICA // PRO SUITE"
     title.TextColor3 = Color3.fromRGB(255, 255, 255)
     title.TextSize = 14
     title.AutoButtonColor = false
 
-    local dragging, dragStart, startPos
-    title.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            dragStart = input.Position
-            startPos = f.Position
-            local conn
-            conn = input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                    if conn then conn:Disconnect() end
-                end
-            end)
-        end
-    end)
-
-    UIS.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            local delta = input.Position - dragStart
-            f.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-        end
-    end)
-
-    local subtitle = Instance.new("TextLabel", f)
-    subtitle.Size = UDim2.new(1, 0, 0, 20)
-    subtitle.Position = UDim2.new(0, 0, 0, 26)
-    subtitle.BackgroundTransparency = 1
-    subtitle.Font = Enum.Font.GothamMedium
-    subtitle.Text = "Tap key box to rebind • Tap name to run"
-    subtitle.TextColor3 = Color3.fromRGB(140, 140, 170)
-    subtitle.TextSize = 10
-
     local container = Instance.new("Frame", f)
-    container.Size = UDim2.new(1, -20, 1, -60)
-    container.Position = UDim2.new(0, 10, 0, 52)
+    container.Size = UDim2.new(1, -20, 1, -55)
+    container.Position = UDim2.new(0, 10, 0, 45)
     container.BackgroundTransparency = 1
 
     local layout = Instance.new("UIListLayout", container)
@@ -457,82 +419,43 @@ pcall(function()
     createMacroRow("RPG", Config.RPG, function() task.spawn(runRpg) end)
     createMacroRow("NewCombo", Config.NewCombo, function() task.spawn(runNewCombo) end)
 
-    local aimRow = Instance.new("Frame", container)
-    aimRow.Size = UDim2.new(1, 0, 0, 40)
-    aimRow.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
-    aimRow.BackgroundTransparency = 0.2
-    aimRow.BorderSizePixel = 0
-    Instance.new("UICorner", aimRow).CornerRadius = UDim.new(0, 10)
+    -- Mode Switcher Row (Toggle between RawSnap and BallisticLead)
+    local modeRow = Instance.new("Frame", container)
+    modeRow.Size = UDim2.new(1, 0, 0, 40)
+    modeRow.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
+    modeRow.BackgroundTransparency = 0.2
+    modeRow.BorderSizePixel = 0
+    Instance.new("UICorner", modeRow).CornerRadius = UDim.new(0, 10)
 
-    local aimLabel = Instance.new("TextButton", aimRow)
-    aimLabel.Size = UDim2.new(0.55, -5, 1, 0)
-    aimLabel.BackgroundTransparency = 1
-    aimLabel.Font = Enum.Font.GothamBold
-    aimLabel.Text = "  🎯 Projectile Aim"
-    aimLabel.TextColor3 = Color3.fromRGB(240, 240, 240)
-    aimLabel.TextSize, aimLabel.TextXAlignment = 12, Enum.TextXAlignment.Left
-    aimLabel.AutoButtonColor = false
+    local modeLabel = Instance.new("TextButton", modeRow)
+    modeLabel.Size = UDim2.new(0.55, -5, 1, 0)
+    modeLabel.BackgroundTransparency = 1
+    modeLabel.Font = Enum.Font.GothamBold
+    modeLabel.Text = "  ⚡ Mode"
+    modeLabel.TextColor3 = Color3.fromRGB(240, 240, 240)
+    modeLabel.TextSize, modeLabel.TextXAlignment = 12, Enum.TextXAlignment.Left
+    modeLabel.AutoButtonColor = false
 
-    local aimToggleBtn = Instance.new("TextButton", aimRow)
-    aimToggleBtn.Size = UDim2.new(0.4, 0, 0.75, 0)
-    aimToggleBtn.Position = UDim2.new(0.58, 0, 0.125, 0)
-    aimToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 100)
-    aimToggleBtn.Font = Enum.Font.GothamBold
-    aimToggleBtn.Text = "ON"
-    aimToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    aimToggleBtn.TextSize = 11
-    aimToggleBtn.AutoButtonColor = false
-    Instance.new("UICorner", aimToggleBtn).CornerRadius = UDim.new(0, 8)
+    local modeBtn = Instance.new("TextButton", modeRow)
+    modeBtn.Size = UDim2.new(0.4, 0, 0.75, 0)
+    modeBtn.Position = UDim2.new(0.58, 0, 0.125, 0)
+    modeBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 200)
+    modeBtn.Font = Enum.Font.GothamBold
+    modeBtn.Text = currentProfile
+    modeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    modeBtn.TextSize = 10
+    modeBtn.AutoButtonColor = false
+    Instance.new("UICorner", modeBtn).CornerRadius = UDim.new(0, 8)
 
-    aimToggleBtn.Activated:Connect(function()
-        AimSettings.Enabled = not AimSettings.Enabled
-        if AimSettings.Enabled then
-            aimToggleBtn.Text = "ON"
-            aimToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 100)
+    modeBtn.Activated:Connect(function()
+        if currentProfile == "BallisticLead" then
+            currentProfile = "RawSnap"
+            modeBtn.Text = "RawSnap (Strong)"
+            modeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
         else
-            aimToggleBtn.Text = "OFF"
-            aimToggleBtn.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
-        end
-    end)
-
-    local fovRow = Instance.new("Frame", container)
-    fovRow.Size = UDim2.new(1, 0, 0, 40)
-    fovRow.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
-    fovRow.BackgroundTransparency = 0.2
-    fovRow.BorderSizePixel = 0
-    Instance.new("UICorner", fovRow).CornerRadius = UDim.new(0, 10)
-
-    local fovLabel = Instance.new("TextButton", fovRow)
-    fovLabel.Size = UDim2.new(0.55, -5, 1, 0)
-    fovLabel.BackgroundTransparency = 1
-    fovLabel.Font = Enum.Font.GothamBold
-    fovLabel.Text = "  🔍 FOV Range"
-    fovLabel.TextColor3 = Color3.fromRGB(240, 240, 240)
-    fovLabel.TextSize, fovLabel.TextXAlignment = 12, Enum.TextXAlignment.Left
-    fovLabel.AutoButtonColor = false
-
-    local fovBtn = Instance.new("TextButton", fovRow)
-    fovBtn.Size = UDim2.new(0.4, 0, 0.75, 0)
-    fovBtn.Position = UDim2.new(0.58, 0, 0.125, 0)
-    fovBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
-    fovBtn.Font = Enum.Font.GothamBold
-    fovBtn.Text = "500px"
-    fovBtn.TextColor3 = Color3.fromRGB(0, 220, 255)
-    fovBtn.TextSize = 11
-    fovBtn.AutoButtonColor = false
-    Instance.new("UICorner", fovBtn).CornerRadius = UDim.new(0, 8)
-
-    local fovIndex = 3
-    fovBtn.Activated:Connect(function()
-        fovIndex = fovIndex + 1
-        if fovIndex > #AimSettings.RadiusPresets then
-            fovIndex = 1
-        end
-        AimSettings.Radius = AimSettings.RadiusPresets[fovIndex]
-        if AimSettings.Radius > 5000 then
-            fovBtn.Text = "Unlimited"
-        else
-            fovBtn.Text = AimSettings.Radius .. "px"
+            currentProfile = "BallisticLead"
+            modeBtn.Text = "BallisticLead"
+            modeBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 200)
         end
     end)
 
@@ -562,27 +485,6 @@ pcall(function()
     toggleBtn.Activated:Connect(function()
         if tMoved then return end
         visible = not visible
-        local targetTrans = visible and 0.08 or 1
-        local textTrans = visible and 0 or 1
-        local info = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-
-        TweenService:Create(f, info, {BackgroundTransparency = targetTrans}):Play()
-        TweenService:Create(fStroke, info, {Transparency = visible and 0.4 or 1}):Play()
-        TweenService:Create(title, info, {TextTransparency = textTrans}):Play()
-        TweenService:Create(subtitle, info, {TextTransparency = textTrans}):Play()
-
-        for _, row in ipairs(container:GetChildren()) do
-            if row:IsA("Frame") then
-                TweenService:Create(row, info, {BackgroundTransparency = visible and 0.2 or 1}):Play()
-                for _, child in ipairs(row:GetChildren()) do
-                    if child:IsA("TextButton") then
-                        TweenService:Create(child, info, {TextTransparency = textTrans}):Play()
-                        if child.BackgroundColor3 ~= Color3.fromRGB(24, 24, 34) and child ~= row then
-                            TweenService:Create(child, info, {BackgroundTransparency = visible and 0 or 1}):Play()
-                        end
-                    end
-                end
-            end
-        end
+        f.Visible = visible
     end)
 end)
