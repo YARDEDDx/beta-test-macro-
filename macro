@@ -8,7 +8,6 @@ local p = Players.LocalPlayer
 local isRunning = false
 local listeningMacro = nil
 
--- Config table: Updated with L3 for Combo, DPadLeft for RPG
 local Config = {
     Snowball = { Key = Enum.KeyCode.ButtonY, Label = "❄️ Snowball" },
     Combo    = { Key = Enum.KeyCode.Thumbstick1, Label = "⚔️ Combo (L3)" },
@@ -16,19 +15,17 @@ local Config = {
     NewCombo = { Key = Enum.KeyCode.DPadDown, Label = "🔥 New Combo" }
 }
 
--- Advanced Prediction & Center-Mass Silent Aim Settings
 local AimSettings = {
     Enabled = true,
-    Radius = 400,          -- FOV threshold for target acquisition
-    Smoothing = 0.6,       -- Tracking response interpolation
-    Prediction = 0.12,     -- Velocity calculation factor for long-range movement leading
+    Radius = 400,
+    Smoothing = 0.6,
+    Prediction = 0.12,
     RadiusPresets = { 150, 250, 400, 600, 9999 }
 }
 
 local currentBestTarget = nil
 local targetVelocities = {}
 
--- Always-on background loop with velocity prediction and true center-mass calculation
 RunService.RenderStepped:Connect(function(dt)
     if not AimSettings.Enabled then
         currentBestTarget = nil
@@ -44,17 +41,12 @@ RunService.RenderStepped:Connect(function(dt)
             local hum = plr.Character:FindFirstChildOfClass("Humanoid")
             if hum and hum.Health > 0 then
                 local rootPart = plr.Character.HumanoidRootPart
-                
-                -- Track velocity for long-range prediction
                 local lastPos = targetVelocities[plr] and targetVelocities[plr].pos or rootPart.Position
                 local currentPos = rootPart.Position
                 local velocity = (currentPos - lastPos) / math.max(dt, 0.001)
                 targetVelocities[plr] = { pos = currentPos, vel = velocity }
 
-                -- Predict future position based on target movement and distance
                 local predictedPos = currentPos + (velocity * AimSettings.Prediction)
-                
-                -- Project to screen space from camera viewing angle
                 local screenPos, onScreen = Camera:WorldToViewportPoint(predictedPos)
                 
                 if onScreen then
@@ -89,7 +81,6 @@ local function clickCursor(b)
     end)
 end
 
--- Routes snowball click directly to predicted center-mass target coordinates
 local function clickAtTarget(b)
     pcall(function()
         local mouseLoc = UIS:GetMouseLocation()
@@ -130,7 +121,6 @@ local function runSnowball()
     isRunning = false
 end
 
--- Verified Combo Match with Slot 4 / XButton2 fix
 local function runCombo()
     if isRunning then return end
     isRunning = true
@@ -265,7 +255,7 @@ local function runNewCombo()
     isRunning = false
 end
 
-print("Exotica: Master Suite with Velocity Prediction & Center-Mass Active!")
+print("Exotica: Master Suite Loaded Successfully!")
 
 task.spawn(function()
     local core = gethui and gethui() or game:GetService("CoreGui")
@@ -275,7 +265,6 @@ task.spawn(function()
         sg.ResetOnSpawn = false
         sg.Parent = core
 
-        -- Injection Notification
         local notif = Instance.new("TextLabel", sg)
         notif.Size = UDim2.new(0, 320, 0, 45)
         notif.Position = UDim2.new(0.5, -160, 0.1, 0)
@@ -303,7 +292,6 @@ task.spawn(function()
             notif:Destroy()
         end)
 
-        -- Floating Gear Toggle Button (Draggable)
         local toggleBtn = Instance.new("TextButton", sg)
         toggleBtn.Size = UDim2.new(0, 45, 0, 45)
         toggleBtn.Position = UDim2.new(0.02, 0, 0.28, 0)
@@ -342,7 +330,6 @@ task.spawn(function()
             end
         end)
 
-        -- Main Window
         local f = Instance.new("Frame", sg)
         f.Size = UDim2.new(0, 260, 0, 390)
         f.Position = UDim2.new(0.02, 55, 0.28, 0)
@@ -357,7 +344,6 @@ task.spawn(function()
         fStroke.Transparency = 0.4
         fStroke.Thickness = 2
 
-        -- Title Header
         local title = Instance.new("TextButton", f)
         title.Size = UDim2.new(1, 0, 0, 40)
         title.BackgroundTransparency = 1
@@ -399,7 +385,6 @@ task.spawn(function()
         subtitle.TextColor3 = Color3.fromRGB(140, 140, 170)
         subtitle.TextSize = 10
 
-        -- Container for rows
         local container = Instance.new("Frame", f)
         container.Size = UDim2.new(1, -20, 1, -60)
         container.Position = UDim2.new(0, 10, 0, 52)
@@ -454,7 +439,6 @@ task.spawn(function()
         createMacroRow("RPG", Config.RPG, function() task.spawn(runRpg) end)
         createMacroRow("NewCombo", Config.NewCombo, function() task.spawn(runNewCombo) end)
 
-        -- Silent Aim Toggle Row
         local aimRow = Instance.new("Frame", container)
         aimRow.Size = UDim2.new(1, 0, 0, 40)
         aimRow.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
@@ -493,7 +477,6 @@ task.spawn(function()
             end
         end)
 
-        -- Silent Aim FOV Range Control Row
         local fovRow = Instance.new("Frame", container)
         fovRow.Size = UDim2.new(1, 0, 0, 40)
         fovRow.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
@@ -535,7 +518,6 @@ task.spawn(function()
             end
         end)
 
-        -- Global input listener supporting dynamic rebinds
         UIS.InputBegan:Connect(function(input, gpe)
             local k = input.KeyCode
             if k == Enum.KeyCode.Unknown then return end
@@ -558,7 +540,6 @@ task.spawn(function()
             end
         end)
 
-        -- Smooth Fade & Toggle Animation
         local visible = true
         toggleBtn.Activated:Connect(function()
             if tMoved then return end
