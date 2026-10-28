@@ -158,7 +158,7 @@ local function runSnowball()
 end
 
 -- ==========================================
-; EXACT TRANSLATION OF YOUR XML/AHK COMBO MACRO WITH FIXED SLOT 4 EQUIP COOLDOWN
+-- EXACT TRANSLATION OF YOUR XML/AHK COMBO MACRO WITH FIXED SLOT 4 EQUIP COOLDOWN
 -- ==========================================
 local function runCombo()
     if isRunning then return end
