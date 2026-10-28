@@ -15,25 +15,24 @@ local Config = {
     NewCombo = { Key = Enum.KeyCode.DPadDown, Label = "🔥 New Combo" }
 }
 
--- Pro-Tier Combat Profiles: Choose between "RawSnap" (Strong) or "BallisticLead" (Smooth Projectile)
+-- Pro Combat Profiles with Dual Mode Support
 local AimProfiles = {
     ["RawSnap"] = {
         FOV = 600,
-        Smoothness = 1.0,      -- Instant hard lock / zero lag
-        Prediction = 0.0,      -- Direct on-target tracking
+        Smoothness = 1.0,
+        Prediction = 0.0,
         Gravity = 0.0,
         UseLeading = false
     },
     ["BallisticLead"] = {
         FOV = 500,
-        Smoothness = 14.0,     -- Silky-smooth frame-independent lerp
-        Prediction = 0.16,     -- Advanced movement velocity factor
-        Gravity = 34.2,        -- Parabolic arc drop compensation
+        Smoothness = 14.0,
+        Prediction = 0.16,
+        Gravity = 34.2,
         UseLeading = true
     }
 }
 
--- Active Profile Selection (Change to "RawSnap" for hard-locking or "BallisticLead" for projectiles)
 local currentProfile = "BallisticLead"
 local AimSettings = {
     Enabled = true,
@@ -44,7 +43,6 @@ local AimSettings = {
 local currentBestTarget = nil
 local targetVelocities = {}
 
--- Elite Core Math Engine: Dynamic Profile Switching & Prediction
 RunService.RenderStepped:Connect(function(dt)
     if not AimSettings.Enabled then
         currentBestTarget = nil
@@ -64,7 +62,6 @@ RunService.RenderStepped:Connect(function(dt)
             if hum and hum.Health > 0 then
                 local targetRoot = plr.Character.HumanoidRootPart
                 
-                -- Strict Line-of-Sight Raycast Check
                 local hasLOS = true
                 if AimSettings.WallCheck and root then
                     local raycastParams = RaycastParams.new()
@@ -81,7 +78,7 @@ RunService.RenderStepped:Connect(function(dt)
                     targetVelocities[plr] = { pos = currentPos, vel = velocity }
 
                     local targetPos = currentPos
-                    if profile.UseLogging or profile.UseLeading then
+                    if profile.UseLeading then
                         local distance = (currentPos - root.Position).Magnitude
                         local timeToTarget = distance / 180.0
                         targetPos = currentPos + (velocity * (timeToTarget * profile.Prediction))
@@ -160,13 +157,18 @@ local function runSnowball()
     isRunning = false
 end
 
+-- ==========================================
+; EXACT TRANSLATION OF YOUR XML/AHK COMBO MACRO WITH FIXED SLOT 4 EQUIP COOLDOWN
+-- ==========================================
 local function runCombo()
     if isRunning then return end
     isRunning = true
 
+    -- 1 Key
     pressKey(Enum.KeyCode.One)
     task.wait(0.015)
 
+    -- First Left Click Down/Up (0.012s delay)
     pcall(function()
         local l = UIS:GetMouseLocation()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
@@ -175,6 +177,7 @@ local function runCombo()
     end)
     task.wait(0.01)
 
+    -- Second Left Click Down/Up (0.012s delay)
     pcall(function()
         local l = UIS:GetMouseLocation()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
@@ -183,9 +186,11 @@ local function runCombo()
     end)
     task.wait(0.01)
 
+    -- 4 Key
     pressKey(Enum.KeyCode.Four)
-    task.wait(0.09) -- Verified Slot 4 equipment cooldown delay
+    task.wait(0.09) -- PROPER EQUIP BUFFER: Prevents weapon from failing to register / hit!
 
+    -- Mouse Button 5 (XButton2 / Forward Side Button -> Index 4)
     pcall(function()
         local l = UIS:GetMouseLocation()
         VIM:SendMouseButtonEvent(l.X, l.Y, 4, true, game, 0)
@@ -194,9 +199,11 @@ local function runCombo()
     end)
     task.wait(0.02)
 
+    -- 8 Key
     pressKey(Enum.KeyCode.Eight)
     task.wait(0.015)
 
+    -- Left Click (0.02s delay)
     pcall(function()
         local l = UIS:GetMouseLocation()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
@@ -205,6 +212,7 @@ local function runCombo()
     end)
     task.wait(0.01)
 
+    -- Left Click (0.01s delay)
     pcall(function()
         local l = UIS:GetMouseLocation()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
@@ -213,9 +221,11 @@ local function runCombo()
     end)
     task.wait(0.01)
 
+    -- 0 Key
     pressKey(Enum.KeyCode.Zero)
     task.wait(0.015)
 
+    -- Left Click (0.01s delay)
     pcall(function()
         local l = UIS:GetMouseLocation()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
@@ -224,9 +234,17 @@ local function runCombo()
     end)
     task.wait(0.01)
 
+    -- 6 Key
     pressKey(Enum.KeyCode.Six)
     task.wait(0.015)
-    clickCursor(0)
+
+    -- Final Left Click (Down & Up)
+    pcall(function()
+        local l = UIS:GetMouseLocation()
+        VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
+        task.wait(0.015)
+        VIM:SendMouseButtonEvent(l.X, l.Y, 0, false, game, 0)
+    end)
 
     task.wait(0.1)
     isRunning = false
@@ -294,9 +312,9 @@ local function runNewCombo()
     isRunning = false
 end
 
-print("Exotica: Pro Modular Combat Suite Loaded!")
+print("Exotica: Perfected Combo & Ballistics Suite Loaded!")
 
--- UI Setup with Profile Switcher
+-- UI Setup
 local core = gethui and gethui() or game:GetService("CoreGui")
 pcall(function()
     local sg = Instance.new("ScreenGui")
@@ -419,7 +437,6 @@ pcall(function()
     createMacroRow("RPG", Config.RPG, function() task.spawn(runRpg) end)
     createMacroRow("NewCombo", Config.NewCombo, function() task.spawn(runNewCombo) end)
 
-    -- Mode Switcher Row (Toggle between RawSnap and BallisticLead)
     local modeRow = Instance.new("Frame", container)
     modeRow.Size = UDim2.new(1, 0, 0, 40)
     modeRow.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
