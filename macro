@@ -8,25 +8,25 @@ local p = Players.LocalPlayer
 local isRunning = false
 local listeningMacro = nil
 
--- Config table: Default controller mappings with rebind support
+-- Config table: Updated with L3 for Combo, DPadLeft for RPG, and defaults for others
 local Config = {
     Snowball = { Key = Enum.KeyCode.ButtonY, Label = "❄️ Snowball" },
-    Combo    = { Key = Enum.KeyCode.ButtonX, Label = "⚔️ Combo" },
-    RPG      = { Key = Enum.KeyCode.ButtonB, Label = "🚀 RPG" },
+    Combo    = { Key = Enum.KeyCode.Thumbstick1, Label = "⚔️ Combo (L3)" },
+    RPG      = { Key = Enum.KeyCode.DPadLeft, Label = "🚀 RPG (DPad Left)" },
     NewCombo = { Key = Enum.KeyCode.DPadDown, Label = "🔥 New Combo" }
 }
 
--- Upgraded Silent Aim Settings State
+-- Advanced Silent Aim Settings State
 local AimSettings = {
     Enabled = true,
-    Radius = 300,      -- FOV targeting threshold
-    Smoothing = 0.35,  -- High responsiveness tracking speed
-    RadiusPresets = { 150, 250, 350, 500, 9999 } -- Toggle steps for FOV
+    Radius = 350,      -- FOV radius threshold
+    Smoothing = 0.5,   -- Ultra-smooth tracking interpolation
+    RadiusPresets = { 150, 250, 350, 500, 9999 }
 }
 
 local currentBestTarget = nil
 
--- Always-on background tracking optimized for torso/feet targeting and smooth prediction
+-- Always-on background loop: Continuously evaluates viewing angles and center-mass positions in real-time
 RunService.RenderStepped:Connect(function()
     if not AimSettings.Enabled then
         currentBestTarget = nil
@@ -43,9 +43,9 @@ RunService.RenderStepped:Connect(function()
             if hum and hum.Health > 0 then
                 local rootPart = plr.Character.HumanoidRootPart
                 
-                -- Offset position downwards from HumanoidRootPart to target Torso / Feet accurately
-                local targetWorldPos = rootPart.Position - Vector3.new(0, 1.2, 0)
-                local screenPos, onScreen = Camera:WorldToScreenPoint(targetWorldPos)
+                -- Target the exact center-mass (torso) of the player's avatar
+                local centerMassPos = rootPart.Position
+                local screenPos, onScreen = Camera:WorldToScreenPoint(centerMassPos)
                 
                 if onScreen then
                     local dist = (Vector2.new(screenPos.X, screenPos.Y) - mouseLoc).Magnitude
@@ -58,6 +58,7 @@ RunService.RenderStepped:Connect(function()
         end
     end
 
+    -- Smooth background interpolation for instant, effortless accuracy upon trigger
     if closestTarget then
         if currentBestTarget then
             currentBestTarget = currentBestTarget:Lerp(closestTarget, AimSettings.Smoothing)
@@ -79,7 +80,7 @@ local function clickCursor(b)
     end)
 end
 
--- Silent aim clicker routing straight to the background tracked lower-body position
+-- Silent clicker leveraging the always-ready background target
 local function clickAtTarget(b)
     pcall(function()
         local mouseLoc = UIS:GetMouseLocation()
@@ -120,45 +121,59 @@ local function runSnowball()
     isRunning = false
 end
 
+-- Verified Combo Match matching your precise XML/AHK timings (including Slot 4 & XButton2 delays)
 local function runCombo()
     if isRunning then return end
     isRunning = true
+
     pressKey(Enum.KeyCode.One)
+    task.wait(0.015)
+
+    -- First Left Click
     pcall(function()
         local l = UIS:GetMouseLocation()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
         task.wait(0.012)
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, false, game, 0)
     end)
+    task.wait(0.01)
+
+    -- Second Left Click
     pcall(function()
         local l = UIS:GetMouseLocation()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
         task.wait(0.012)
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, false, game, 0)
     end)
+    task.wait(0.01)
+
+    -- 4 Key
     pressKey(Enum.KeyCode.Four)
-    clickCursor(4)
+    task.wait(0.015)
+
+    -- Mouse Button 5 / XButton2 (Forward Side Button / Mouse Button 4 or 5 event)
+    pcall(function()
+        local l = UIS:GetMouseLocation()
+        VIM:SendMouseButtonEvent(l.X, l.Y, 4, true, game, 0) -- Button index 4 maps to side button / XButton2
+        task.wait(0.015)
+        VIM:SendMouseButtonEvent(l.X, l.Y, 4, false, game, 0)
+    end)
     task.wait(0.02)
+
+    -- 8 Key
     pressKey(Enum.KeyCode.Eight)
+    task.wait(0.015)
+
+    -- Left Click 1
     pcall(function()
         local l = UIS:GetMouseLocation()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
         task.wait(0.02)
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, false, game, 0)
     end)
-    pcall(function()
-        local l = UIS:GetMouseLocation()
-        VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
-        task.wait(0.02)
-        VIM:SendMouseButtonEvent(l.X, l.Y, 0, false, game, 0)
-    end)
-    pcall(function()
-        local l = UIS:GetMouseLocation()
-        VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
-        task.wait(0.01)
-        VIM:SendMouseButtonEvent(l.X, l.Y, 0, false, game, 0)
-    end)
-    pressKey(Enum.KeyCode.Zero)
+    task.wait(0.01)
+
+    -- Left Click 2
     pcall(function()
         local l = UIS:GetMouseLocation()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
@@ -166,8 +181,27 @@ local function runCombo()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, false, game, 0)
     end)
     task.wait(0.01)
+
+    -- 0 Key
+    pressKey(Enum.KeyCode.Zero)
+    task.wait(0.015)
+
+    -- Left Click 3
+    pcall(function()
+        local l = UIS:GetMouseLocation()
+        VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
+        task.wait(0.01)
+        VIM:SendMouseButtonEvent(l.X, l.Y, 0, false, game, 0)
+    end)
+    task.wait(0.01)
+
+    -- 6 Key
     pressKey(Enum.KeyCode.Six)
+    task.wait(0.015)
+
+    -- Final Left Click
     clickCursor(0)
+
     task.wait(0.1)
     isRunning = false
 end
@@ -234,7 +268,7 @@ local function runNewCombo()
     isRunning = false
 end
 
-print("Exotica: Master Suite with FOV & Torso Silent Aim Active!")
+print("Exotica: Master Suite Updated with L3 Combo & DPadLeft RPG Active!")
 
 task.spawn(function()
     local core = gethui and gethui() or game:GetService("CoreGui")
@@ -311,7 +345,7 @@ task.spawn(function()
             end
         end)
 
-        -- Main Window (Expanded to fit FOV settings)
+        -- Main Window
         local f = Instance.new("Frame", sg)
         f.Size = UDim2.new(0, 260, 0, 390)
         f.Position = UDim2.new(0.02, 55, 0.28, 0)
@@ -462,7 +496,7 @@ task.spawn(function()
             end
         end)
 
-        -- Silent Aim FOV Radius Control Row
+        -- Silent Aim FOV Range Control Row
         local fovRow = Instance.new("Frame", container)
         fovRow.Size = UDim2.new(1, 0, 0, 40)
         fovRow.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
@@ -484,13 +518,13 @@ task.spawn(function()
         fovBtn.Position = UDim2.new(0.58, 0, 0.125, 0)
         fovBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
         fovBtn.Font = Enum.Font.GothamBold
-        fovBtn.Text = "300px"
+        fovBtn.Text = "350px"
         fovBtn.TextColor3 = Color3.fromRGB(0, 220, 255)
         fovBtn.TextSize = 11
         fovBtn.AutoButtonColor = false
         Instance.new("UICorner", fovBtn).CornerRadius = UDim.new(0, 8)
 
-        local fovIndex = 2
+        local fovIndex = 3
         fovBtn.Activated:Connect(function()
             fovIndex = fovIndex + 1
             if fovIndex > #AimSettings.RadiusPresets then
