@@ -8,7 +8,6 @@ local p = Players.LocalPlayer
 local isRunning = false
 local listeningMacro = nil
 
--- Config table: Updated with L3 for Combo, DPadLeft for RPG
 local Config = {
     Snowball = { Key = Enum.KeyCode.ButtonY, Label = "❄️ Snowball" },
     Combo    = { Key = Enum.KeyCode.Thumbstick1, Label = "⚔️ Combo (L3)" },
@@ -16,19 +15,17 @@ local Config = {
     NewCombo = { Key = Enum.KeyCode.DPadDown, Label = "🔥 New Combo" }
 }
 
--- Advanced Prediction & Center-Mass Silent Aim Settings
 local AimSettings = {
     Enabled = true,
-    Radius = 400,          -- FOV threshold for target acquisition
-    Smoothing = 0.6,       -- Tracking response interpolation
-    Prediction = 0.12,     -- Velocity calculation factor for long-range movement leading
+    Radius = 400,
+    Smoothing = 0.6,
+    Prediction = 0.12,
     RadiusPresets = { 150, 250, 400, 600, 9999 }
 }
 
 local currentBestTarget = nil
 local targetVelocities = {}
 
--- Always-on background loop with velocity prediction and true center-mass calculation
 RunService.RenderStepped:Connect(function(dt)
     if not AimSettings.Enabled then
         currentBestTarget = nil
@@ -44,17 +41,12 @@ RunService.RenderStepped:Connect(function(dt)
             local hum = plr.Character:FindFirstChildOfClass("Humanoid")
             if hum and hum.Health > 0 then
                 local rootPart = plr.Character.HumanoidRootPart
-                
-                -- Track velocity for long-range prediction
                 local lastPos = targetVelocities[plr] and targetVelocities[plr].pos or rootPart.Position
                 local currentPos = rootPart.Position
                 local velocity = (currentPos - lastPos) / math.max(dt, 0.001)
                 targetVelocities[plr] = { pos = currentPos, vel = velocity }
 
-                -- Predict future position based on target movement and distance
                 local predictedPos = currentPos + (velocity * AimSettings.Prediction)
-                
-                -- Project to screen space from camera viewing angle
                 local screenPos, onScreen = Camera:WorldToViewportPoint(predictedPos)
                 
                 if onScreen then
@@ -89,7 +81,6 @@ local function clickCursor(b)
     end)
 end
 
--- Routes snowball click directly to predicted center-mass target coordinates
 local function clickAtTarget(b)
     pcall(function()
         local mouseLoc = UIS:GetMouseLocation()
@@ -130,7 +121,6 @@ local function runSnowball()
     isRunning = false
 end
 
--- Verified Combo Match with Slot 4 / XButton2 fix
 local function runCombo()
     if isRunning then return end
     isRunning = true
@@ -265,7 +255,7 @@ local function runNewCombo()
     isRunning = false
 end
 
-print("Exotica: Master Suite with Velocity Prediction & Center-Mass Active!")
+print("Exotica: Master Suite Loaded Successfully!")
 
 task.spawn(function()
     local core = gethui and gethui() or game:GetService("CoreGui")
@@ -275,7 +265,6 @@ task.spawn(function()
         sg.ResetOnSpawn = false
         sg.Parent = core
 
-        -- Injection Notification
         local notif = Instance.new("TextLabel", sg)
         notif.Size = UDim2.new(0, 320, 0, 45)
         notif.Position = UDim2.new(0.5, -160, 0.1, 0)
@@ -303,7 +292,6 @@ task.spawn(function()
             notif:Destroy()
         end)
 
-        -- Floating Gear Toggle Button (Draggable)
         local toggleBtn = Instance.new("TextButton", sg)
         toggleBtn.Size = UDim2.new(0, 45, 0, 45)
         toggleBtn.Position = UDim2.new(0.02, 0, 0.28, 0)
@@ -315,3 +303,269 @@ task.spawn(function()
         Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(1, 0)
         local tStroke = Instance.new("UIStroke", toggleBtn)
         tStroke.Color = Color3.fromRGB(0, 200, 255)
+        tStroke.Thickness = 2
+
+        local tDragging, tDragStart, tStartPos, tMoved = false, nil, nil, false
+        toggleBtn.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                tDragging = true
+                tDragStart = input.Position
+                tStartPos = toggleBtn.Position
+                tMoved = false
+                local conn
+                conn = input.Changed:Connect(function()
+                    if input.UserInputState == Enum.UserInputState.End then
+                        tDragging = false
+                        if conn then conn:Disconnect() end
+                    end
+                end)
+            end
+        end)
+
+        UIS.InputChanged:Connect(function(input)
+            if tDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+                local delta = input.Position - tDragStart
+                if delta.Magnitude > 5 then tMoved = true end
+                toggleBtn.Position = UDim2.new(tStartPos.X.Scale, tStartPos.X.Offset + delta.X, tStartPos.Y.Scale, tStartPos.Y.Offset + delta.Y)
+            end
+        end)
+
+        local f = Instance.new("Frame", sg)
+        f.Size = UDim2.new(0, 260, 0, 390)
+        f.Position = UDim2.new(0.02, 55, 0.28, 0)
+        f.BackgroundColor3 = Color3.fromRGB(15, 15, 22)
+        f.BackgroundTransparency = 0.08
+        f.BorderSizePixel = 0
+        f.Active = true
+        Instance.new("UICorner", f).CornerRadius = UDim.new(0, 16)
+
+        local fStroke = Instance.new("UIStroke", f)
+        fStroke.Color = Color3.fromRGB(0, 200, 255)
+        fStroke.Transparency = 0.4
+        fStroke.Thickness = 2
+
+        local title = Instance.new("TextButton", f)
+        title.Size = UDim2.new(1, 0, 0, 40)
+        title.BackgroundTransparency = 1
+        title.Font = Enum.Font.GothamBold
+        title.Text = "EXOTICA // MACROS"
+        title.TextColor3 = Color3.fromRGB(255, 255, 255)
+        title.TextSize = 14
+        title.AutoButtonColor = false
+
+        local dragging, dragStart, startPos
+        title.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                dragging = true
+                dragStart = input.Position
+                startPos = f.Position
+                local conn
+                conn = input.Changed:Connect(function()
+                    if input.UserInputState == Enum.UserInputState.End then
+                        dragging = false
+                        if conn then conn:Disconnect() end
+                    end
+                end)
+            end
+        end)
+
+        UIS.InputChanged:Connect(function(input)
+            if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+                local delta = input.Position - dragStart
+                f.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+            end
+        end)
+
+        local subtitle = Instance.new("TextLabel", f)
+        subtitle.Size = UDim2.new(1, 0, 0, 20)
+        subtitle.Position = UDim2.new(0, 0, 0, 26)
+        subtitle.BackgroundTransparency = 1
+        subtitle.Font = Enum.Font.GothamMedium
+        subtitle.Text = "Tap key box to rebind • Tap name to run"
+        subtitle.TextColor3 = Color3.fromRGB(140, 140, 170)
+        subtitle.TextSize = 10
+
+        local container = Instance.new("Frame", f)
+        container.Size = UDim2.new(1, -20, 1, -60)
+        container.Position = UDim2.new(0, 10, 0, 52)
+        container.BackgroundTransparency = 1
+
+        local layout = Instance.new("UIListLayout", container)
+        layout.SortOrder = Enum.SortOrder.LayoutOrder
+        layout.Padding = UDim.new(0, 8)
+
+        local keyButtonRefs = {}
+
+        local function createMacroRow(name, data, executeFunc)
+            local row = Instance.new("Frame", container)
+            row.Size = UDim2.new(1, 0, 0, 40)
+            row.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
+            row.BackgroundTransparency = 0.2
+            row.BorderSizePixel = 0
+            Instance.new("UICorner", row).CornerRadius = UDim.new(0, 10)
+
+            local execBtn = Instance.new("TextButton", row)
+            execBtn.Size = UDim2.new(0.55, -5, 1, 0)
+            execBtn.BackgroundTransparency = 1
+            execBtn.Font = Enum.Font.GothamBold
+            execBtn.Text = "  " .. data.Label
+            execBtn.TextColor3 = Color3.fromRGB(240, 240, 240)
+            execBtn.TextSize, execBtn.TextXAlignment = 12, Enum.TextXAlignment.Left
+            execBtn.AutoButtonColor = false
+            execBtn.Activated:Connect(executeFunc)
+
+            local bindBtn = Instance.new("TextButton", row)
+            bindBtn.Size = UDim2.new(0.4, 0, 0.75, 0)
+            bindBtn.Position = UDim2.new(0.58, 0, 0.125, 0)
+            bindBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
+            bindBtn.Font = Enum.Font.GothamBold
+            bindBtn.Text = tostring(data.Key.Name)
+            bindBtn.TextColor3 = Color3.fromRGB(0, 220, 255)
+            bindBtn.TextSize = 11
+            bindBtn.AutoButtonColor = false
+            Instance.new("UICorner", bindBtn).CornerRadius = UDim.new(0, 8)
+            
+            keyButtonRefs[name] = bindBtn
+
+            bindBtn.Activated:Connect(function()
+                listeningMacro = name
+                bindBtn.Text = "[ Press Key... ]"
+                bindBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
+            end)
+        end
+
+        createMacroRow("Snowball", Config.Snowball, function() task.spawn(runSnowball) end)
+        createMacroRow("Combo", Config.Combo, function() task.spawn(runCombo) end)
+        createMacroRow("RPG", Config.RPG, function() task.spawn(runRpg) end)
+        createMacroRow("NewCombo", Config.NewCombo, function() task.spawn(runNewCombo) end)
+
+        local aimRow = Instance.new("Frame", container)
+        aimRow.Size = UDim2.new(1, 0, 0, 40)
+        aimRow.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
+        aimRow.BackgroundTransparency = 0.2
+        aimRow.BorderSizePixel = 0
+        Instance.new("UICorner", aimRow).CornerRadius = UDim.new(0, 10)
+
+        local aimLabel = Instance.new("TextButton", aimRow)
+        aimLabel.Size = UDim2.new(0.55, -5, 1, 0)
+        aimLabel.BackgroundTransparency = 1
+        aimLabel.Font = Enum.Font.GothamBold
+        aimLabel.Text = "  🎯 Silent Aim"
+        aimLabel.TextColor3 = Color3.fromRGB(240, 240, 240)
+        aimLabel.TextSize, aimLabel.TextXAlignment = 12, Enum.TextXAlignment.Left
+        aimLabel.AutoButtonColor = false
+
+        local aimToggleBtn = Instance.new("TextButton", aimRow)
+        aimToggleBtn.Size = UDim2.new(0.4, 0, 0.75, 0)
+        aimToggleBtn.Position = UDim2.new(0.58, 0, 0.125, 0)
+        aimToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 100)
+        aimToggleBtn.Font = Enum.Font.GothamBold
+        aimToggleBtn.Text = "ON"
+        aimToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        aimToggleBtn.TextSize = 11
+        aimToggleBtn.AutoButtonColor = false
+        Instance.new("UICorner", aimToggleBtn).CornerRadius = UDim.new(0, 8)
+
+        aimToggleBtn.Activated:Connect(function()
+            AimSettings.Enabled = not AimSettings.Enabled
+            if AimSettings.Enabled then
+                aimToggleBtn.Text = "ON"
+                aimToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 100)
+            else
+                aimToggleBtn.Text = "OFF"
+                aimToggleBtn.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
+            end
+        end)
+
+        local fovRow = Instance.new("Frame", container)
+        fovRow.Size = UDim2.new(1, 0, 0, 40)
+        fovRow.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
+        fovRow.BackgroundTransparency = 0.2
+        fovRow.BorderSizePixel = 0
+        Instance.new("UICorner", fovRow).CornerRadius = UDim.new(0, 10)
+
+        local fovLabel = Instance.new("TextButton", fovRow)
+        fovLabel.Size = UDim2.new(0.55, -5, 1, 0)
+        fovLabel.BackgroundTransparency = 1
+        fovLabel.Font = Enum.Font.GothamBold
+        fovLabel.Text = "  🔍 FOV Range"
+        fovLabel.TextColor3 = Color3.fromRGB(240, 240, 240)
+        fovLabel.TextSize, fovLabel.TextXAlignment = 12, Enum.TextXAlignment.Left
+        fovLabel.AutoButtonColor = false
+
+        local fovBtn = Instance.new("TextButton", fovRow)
+        fovBtn.Size = UDim2.new(0.4, 0, 0.75, 0)
+        fovBtn.Position = UDim2.new(0.58, 0, 0.125, 0)
+        fovBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
+        fovBtn.Font = Enum.Font.GothamBold
+        fovBtn.Text = "400px"
+        fovBtn.TextColor3 = Color3.fromRGB(0, 220, 255)
+        fovBtn.TextSize = 11
+        fovBtn.AutoButtonColor = false
+        Instance.new("UICorner", fovBtn).CornerRadius = UDim.new(0, 8)
+
+        local fovIndex = 3
+        fovBtn.Activated:Connect(function()
+            fovIndex = fovIndex + 1
+            if fovIndex > #AimSettings.RadiusPresets then
+                fovIndex = 1
+            end
+            AimSettings.Radius = AimSettings.RadiusPresets[fovIndex]
+            if AimSettings.Radius > 5000 then
+                fovBtn.Text = "Unlimited"
+            else
+                fovBtn.Text = AimSettings.Radius .. "px"
+            end
+        end)
+
+        UIS.InputBegan:Connect(function(input, gpe)
+            local k = input.KeyCode
+            if k == Enum.KeyCode.Unknown then return end
+
+            if listeningMacro then
+                Config[listeningMacro].Key = k
+                keyButtonRefs[listeningMacro].Text = tostring(k.Name)
+                keyButtonRefs[listeningMacro].TextColor3 = Color3.fromRGB(0, 220, 255)
+                listeningMacro = nil
+            else
+                if k == Config.Snowball.Key then
+                    task.spawn(runSnowball)
+                elseif k == Config.Combo.Key then
+                    task.spawn(runCombo)
+                elseif k == Config.RPG.Key then
+                    task.spawn(runRpg)
+                elseif k == Config.NewCombo.Key then
+                    task.spawn(runNewCombo)
+                end
+            end
+        end)
+
+        local visible = true
+        toggleBtn.Activated:Connect(function()
+            if tMoved then return end
+            visible = not visible
+            local targetTrans = visible and 0.08 or 1
+            local textTrans = visible and 0 or 1
+            local info = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+            TweenService:Create(f, info, {BackgroundTransparency = targetTrans}):Play()
+            TweenService:Create(fStroke, info, {Transparency = visible and 0.4 or 1}):Play()
+            TweenService:Create(title, info, {TextTransparency = textTrans}):Play()
+            TweenService:Create(subtitle, info, {TextTransparency = textTrans}):Play()
+
+            for _, row in ipairs(container:GetChildren()) do
+                if row:IsA("Frame") then
+                    TweenService:Create(row, info, {BackgroundTransparency = visible and 0.2 or 1}):Play()
+                    for _, child in ipairs(row:GetChildren()) do
+                        if child:IsA("TextButton") then
+                            TweenService:Create(child, info, {TextTransparency = textTrans}):Play()
+                            if child.BackgroundColor3 ~= Color3.fromRGB(24, 24, 34) and child ~= row then
+                                TweenService:Create(child, info, {BackgroundTransparency = visible and 0 or 1}):Play()
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end)
+end)
