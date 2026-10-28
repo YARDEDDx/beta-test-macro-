@@ -2,13 +2,12 @@ local UIS = game:GetService("UserInputService")
 local Players = game:GetService("Players")
 local VIM = game:GetService("VirtualInputManager")
 local TweenService = game:GetService("TweenService")
-local RunService = game:GetService("RunService")
 local Camera = workspace.CurrentCamera
 local p = Players.LocalPlayer
 local isRunning = false
 local listeningMacro = nil
 
--- Config table: Default controller mappings (with keyboard fallback capability)
+-- Config table: Default controller mappings with rebind support
 local Config = {
     Snowball = { Key = Enum.KeyCode.ButtonY, Label = "❄️ Snowball" },
     Combo    = { Key = Enum.KeyCode.ButtonX, Label = "⚔️ Combo" },
@@ -26,19 +25,11 @@ local function clickCursor(b)
     end)
 end
 
-local function pressKey(k)
+-- Silent Aim Clicker: Sends the click directly to the closest player's screen coordinates without moving your mouse cursor
+local function clickAtTarget(b)
     pcall(function()
-        VIM:SendKeyEvent(true, k, false, game)
-        task.wait(0.01)
-        VIM:SendKeyEvent(false, k, false, game)
-    end)
-end
-
--- Automatic Aiming Helper: Finds the closest player and moves camera/cursor to target them
-local function aimAtClosestPlayer()
-    pcall(function()
-        local closestTarget = nil
-        local shortestDistance = math.huge
+        local closestPos = nil
+        local shortestDist = math.huge
         local mouseLoc = UIS:GetMouseLocation()
 
         for _, plr in ipairs(Players:GetPlayers()) do
@@ -49,42 +40,49 @@ local function aimAtClosestPlayer()
                     local screenPos, onScreen = Camera:WorldToScreenPoint(rootPart.Position)
                     if onScreen then
                         local dist = (Vector2.new(screenPos.X, screenPos.Y) - mouseLoc).Magnitude
-                        if dist < shortestDistance then
-                            shortestDistance = dist
-                            closestTarget = screenPos
+                        if dist < shortestDist then
+                            shortestDist = dist
+                            closestPos = screenPos
                         end
                     end
                 end
             end
         end
 
-        -- If a valid target is found on screen, snap or shift mouse/aim towards them
-        if closestTarget then
-            VIM:SendMouseMoveEvent(closestTarget.X, closestTarget.Y, game)
-        end
+        -- Use target coordinates if found, otherwise fallback to current mouse location
+        local targetX = closestPos and closestPos.X or mouseLoc.X
+        local targetY = closestPos and closestPos.Y or mouseLoc.Y
+        local btn = b or 0
+
+        VIM:SendMouseButtonEvent(targetX, targetY, btn, true, game, 0)
+        task.wait(0.015)
+        VIM:SendMouseButtonEvent(targetX, targetY, btn, false, game, 0)
     end)
 end
 
--- Exact XML Verified Snowball Macro with Integrated Auto-Aim
+local function pressKey(k)
+    pcall(function()
+        VIM:SendKeyEvent(true, k, false, game)
+        task.wait(0.01)
+        VIM:SendKeyEvent(false, k, false, game)
+    end)
+end
+
+-- Exact XML Verified Snowball Macro with Silent Aim
 local function runSnowball()
     if isRunning then return end
     isRunning = true
     
-    -- Automatically lock onto the nearest player before throwing snowballs
-    aimAtClosestPlayer()
-    task.wait(0.02)
-
     pressKey(Enum.KeyCode.Seven)
-    clickCursor(0)
+    clickAtTarget(0)
     task.wait(0.02)
     
-    aimAtClosestPlayer()
     pressKey(Enum.KeyCode.Nine)
-    clickCursor(0)
+    clickAtTarget(0)
     task.wait(0.02)
     
     pressKey(Enum.KeyCode.Six)
-    clickCursor(0)
+    clickAtTarget(0)
     
     task.wait(0.1)
     isRunning = false
