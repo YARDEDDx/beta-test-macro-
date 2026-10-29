@@ -2,17 +2,77 @@ local UIS = game:GetService("UserInputService")
 local Players = game:GetService("Players")
 local VIM = game:GetService("VirtualInputManager")
 local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local Camera = workspace.CurrentCamera
 local p = Players.LocalPlayer
 local isRunning = false
 local listeningMacro = nil
 
--- Config table with precise default key and controller mappings
+-- Config table: L3 for Combo, DPadLeft for RPG
 local Config = {
-    Snowball = { Key = Enum.KeyCode.R, Label = "❄️ Snowball" },
-    Combo    = { Key = Enum.KeyCode.T, Label = "⚔️ Combo" },
-    RPG      = { Key = Enum.KeyCode.Q, Label = "🚀 RPG" },
+    Snowball = { Key = Enum.KeyCode.ButtonY, Label = "❄️ Snowball" },
+    Combo    = { Key = Enum.KeyCode.Thumbstick1, Label = "⚔️ Combo (L3)" },
+    RPG      = { Key = Enum.KeyCode.DPadLeft, Label = "🚀 RPG (DPad Left)" },
     NewCombo = { Key = Enum.KeyCode.DPadDown, Label = "🔥 New Combo" }
 }
+
+-- Current working Aimbot Settings (Untouched as requested)
+local AimSettings = {
+    Enabled = true,
+    Radius = 400,
+    Smoothing = 0.6,
+    Prediction = 0.12,
+    RadiusPresets = { 150, 250, 400, 600, 9999 }
+}
+
+local currentBestTarget = nil
+local targetVelocities = {}
+
+-- Aimbot background loop (Kept running smoothly as is)
+RunService.RenderStepped:Connect(function(dt)
+    if not AimSettings.Enabled then
+        currentBestTarget = nil
+        return
+    end
+
+    local closestTarget = nil
+    local shortestDist = AimSettings.Radius
+    local viewportCenter = Camera.ViewportSize / 2
+
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= p and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+            local hum = plr.Character:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health > 0 then
+                local rootPart = plr.Character.HumanoidRootPart
+                local lastPos = targetVelocities[plr] and targetVelocities[plr].pos or rootPart.Position
+                local currentPos = rootPart.Position
+                local velocity = (currentPos - lastPos) / math.max(dt, 0.001)
+                targetVelocities[plr] = { pos = currentPos, vel = velocity }
+
+                local predictedPos = currentPos + (velocity * AimSettings.Prediction)
+                local screenPos, onScreen = Camera:WorldToViewportPoint(predictedPos)
+                
+                if onScreen then
+                    local dist = (Vector2.new(screenPos.X, screenPos.Y) - viewportCenter).Magnitude
+                    if dist < shortestDist then
+                        shortestDist = dist
+                        closestTarget = Vector2.new(screenPos.X, screenPos.Y)
+                    end
+                end
+            end
+        end
+    end
+
+    if closestTarget then
+        if currentBestTarget then
+            currentBestTarget = currentBestTarget:Lerp(closestTarget, AimSettings.Smoothing)
+        else
+            currentBestTarget = closestTarget
+        end
+    else
+        currentBestTarget = nil
+    end
+end)
 
 local function clickCursor(b)
     pcall(function()
@@ -24,6 +84,19 @@ local function clickCursor(b)
     end)
 end
 
+local function clickAtTarget(b)
+    pcall(function()
+        local mouseLoc = UIS:GetMouseLocation()
+        local targetX = (AimSettings.Enabled and currentBestTarget) and currentBestTarget.X or mouseLoc.X
+        local targetY = (AimSettings.Enabled and currentBestTarget) and currentBestTarget.Y or mouseLoc.Y
+        local btn = b or 0
+
+        VIM:SendMouseButtonEvent(targetX, targetY, btn, true, game, 0)
+        task.wait(0.015)
+        VIM:SendMouseButtonEvent(targetX, targetY, btn, false, game, 0)
+    end)
+end
+
 local function pressKey(k)
     pcall(function()
         VIM:SendKeyEvent(true, k, false, game)
@@ -32,66 +105,79 @@ local function pressKey(k)
     end)
 end
 
--- Exact XML Verified Snowball Macro (7 -> LeftClick -> 0.02s -> 9 -> LeftClick -> 0.02s -> 6 Loveboard + LeftClick)
 local function runSnowball()
     if isRunning then return end
     isRunning = true
     
     pressKey(Enum.KeyCode.Seven)
-    clickCursor(0)
+    clickAtTarget(0)
     task.wait(0.02)
     
     pressKey(Enum.KeyCode.Nine)
-    clickCursor(0)
+    clickAtTarget(0)
     task.wait(0.02)
     
     pressKey(Enum.KeyCode.Six)
-    clickCursor(0)
+    clickAtTarget(0)
     
     task.wait(0.1)
     isRunning = false
 end
 
--- Verified Board Combo Match
+-- FIXED COMBO MACRO: Exact AHK translation with proper Slot 4 weapon equip delay added
 local function runCombo()
     if isRunning then return end
     isRunning = true
+
+    -- 1 Key
     pressKey(Enum.KeyCode.One)
+    task.wait(0.015)
+
+    -- First Left Click Down/Up (0.012s delay)
     pcall(function()
         local l = UIS:GetMouseLocation()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
         task.wait(0.012)
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, false, game, 0)
     end)
+    task.wait(0.01)
+
+    -- Second Left Click Down/Up (0.012s delay)
     pcall(function()
         local l = UIS:GetMouseLocation()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
         task.wait(0.012)
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, false, game, 0)
     end)
+    task.wait(0.01)
+
+    -- 4 Key (Equip Weapon)
     pressKey(Enum.KeyCode.Four)
-    clickCursor(4)
+    task.wait(0.09) -- Added proper equip/draw cooldown delay so slot 4 registers correctly!
+
+    -- Mouse Button 5 / XButton2 (Forward Side Button -> Button Index 4)
+    pcall(function()
+        local l = UIS:GetMouseLocation()
+        VIM:SendMouseButtonEvent(l.X, l.Y, 4, true, game, 0)
+        task.wait(0.015)
+        VIM:SendMouseButtonEvent(l.X, l.Y, 4, false, game, 0)
+    end)
     task.wait(0.02)
+
+    -- 8 Key
     pressKey(Enum.KeyCode.Eight)
+    task.wait(0.015)
+
+    -- Left Click (0.02s delay)
     pcall(function()
         local l = UIS:GetMouseLocation()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
         task.wait(0.02)
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, false, game, 0)
     end)
-    pcall(function()
-        local l = UIS:GetMouseLocation()
-        VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
-        task.wait(0.02)
-        VIM:SendMouseButtonEvent(l.X, l.Y, 0, false, game, 0)
-    end)
-    pcall(function()
-        local l = UIS:GetMouseLocation()
-        VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
-        task.wait(0.01)
-        VIM:SendMouseButtonEvent(l.X, l.Y, 0, false, game, 0)
-    end)
-    pressKey(Enum.KeyCode.Zero)
+    task.wait(0.01)
+
+    -- Left Click (0.01s delay)
     pcall(function()
         local l = UIS:GetMouseLocation()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
@@ -99,36 +185,48 @@ local function runCombo()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, false, game, 0)
     end)
     task.wait(0.01)
+
+    -- 0 Key
+    pressKey(Enum.KeyCode.Zero)
+    task.wait(0.015)
+
+    -- Left Click (0.01s delay)
+    pcall(function()
+        local l = UIS:GetMouseLocation()
+        VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
+        task.wait(0.01)
+        VIM:SendMouseButtonEvent(l.X, l.Y, 0, false, game, 0)
+    end)
+    task.wait(0.01)
+
+    -- 6 Key
     pressKey(Enum.KeyCode.Six)
+    task.wait(0.015)
+
+    -- Final Left Click
     clickCursor(0)
+
     task.wait(0.1)
     isRunning = false
 end
 
--- Exact Verified RPG Cooldown Match (5 -> 100ms -> Click -> 20ms -> R -> 6 -> Click)
 local function runRpg()
     if isRunning then return end
     isRunning = true
-    
     pressKey(Enum.KeyCode.Five)
     task.wait(0.1)
-    
     clickCursor(0)
     task.wait(0.02)
-    
     pressKey(Enum.KeyCode.R)
     pressKey(Enum.KeyCode.Six)
     clickCursor(0)
-    
     task.wait(0.2)
     isRunning = false
 end
 
--- Verified New Combo Match
 local function runNewCombo()
     if isRunning then return end
     isRunning = true
-    
     local spamming = true
     task.spawn(function()
         while spamming do
@@ -150,7 +248,6 @@ local function runNewCombo()
     task.wait(0.15)
     pressKey(Enum.KeyCode.Seven)
     task.wait(0.15)
-    
     pressKey(Enum.KeyCode.Four)
     pcall(function()
         local l = UIS:GetMouseLocation()
@@ -159,7 +256,6 @@ local function runNewCombo()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, false, game, 0)
     end)
     task.wait(0.15)
-    
     pressKey(Enum.KeyCode.Nine)
     task.wait(0.15)
     pressKey(Enum.KeyCode.Two)
@@ -168,7 +264,7 @@ local function runNewCombo()
     task.wait(0.15)
     pressKey(Enum.KeyCode.Eight)
     task.wait(1.0)
-    
+
     spamming = false
     task.wait(0.05)
     pressKey(Enum.KeyCode.Three)
@@ -176,7 +272,7 @@ local function runNewCombo()
     isRunning = false
 end
 
-print("Exotica: Master Suite Active!")
+print("Exotica: Master Suite Updated with Fixed Slot 4 Combo Cooldown!")
 
 task.spawn(function()
     local core = gethui and gethui() or game:GetService("CoreGui")
@@ -186,7 +282,6 @@ task.spawn(function()
         sg.ResetOnSpawn = false
         sg.Parent = core
 
-        -- Injection Fade-In Notification Banner ("Crafted by David for Exotica")
         local notif = Instance.new("TextLabel", sg)
         notif.Size = UDim2.new(0, 320, 0, 45)
         notif.Position = UDim2.new(0.5, -160, 0.1, 0)
@@ -214,7 +309,6 @@ task.spawn(function()
             notif:Destroy()
         end)
 
-        -- Floating Toggle Button (Gear icon) - Now Fully Draggable!
         local toggleBtn = Instance.new("TextButton", sg)
         toggleBtn.Size = UDim2.new(0, 45, 0, 45)
         toggleBtn.Position = UDim2.new(0.02, 0, 0.28, 0)
@@ -228,7 +322,6 @@ task.spawn(function()
         tStroke.Color = Color3.fromRGB(0, 200, 255)
         tStroke.Thickness = 2
 
-        -- Custom Draggable Logic for the Settings Logo
         local tDragging, tDragStart, tStartPos, tMoved = false, nil, nil, false
         toggleBtn.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -236,7 +329,6 @@ task.spawn(function()
                 tDragStart = input.Position
                 tStartPos = toggleBtn.Position
                 tMoved = false
-                
                 local conn
                 conn = input.Changed:Connect(function()
                     if input.UserInputState == Enum.UserInputState.End then
@@ -250,16 +342,13 @@ task.spawn(function()
         UIS.InputChanged:Connect(function(input)
             if tDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
                 local delta = input.Position - tDragStart
-                if delta.Magnitude > 5 then
-                    tMoved = true
-                end
+                if delta.Magnitude > 5 then tMoved = true end
                 toggleBtn.Position = UDim2.new(tStartPos.X.Scale, tStartPos.X.Offset + delta.X, tStartPos.Y.Scale, tStartPos.Y.Offset + delta.Y)
             end
         end)
 
-        -- Main Modern Window
         local f = Instance.new("Frame", sg)
-        f.Size = UDim2.new(0, 260, 0, 270)
+        f.Size = UDim2.new(0, 260, 0, 390)
         f.Position = UDim2.new(0.02, 55, 0.28, 0)
         f.BackgroundColor3 = Color3.fromRGB(15, 15, 22)
         f.BackgroundTransparency = 0.08
@@ -272,7 +361,6 @@ task.spawn(function()
         fStroke.Transparency = 0.4
         fStroke.Thickness = 2
 
-        -- Title Header (Acts as custom robust mobile drag anchor for main window)
         local title = Instance.new("TextButton", f)
         title.Size = UDim2.new(1, 0, 0, 40)
         title.BackgroundTransparency = 1
@@ -314,7 +402,6 @@ task.spawn(function()
         subtitle.TextColor3 = Color3.fromRGB(140, 140, 170)
         subtitle.TextSize = 10
 
-        -- Container for rows
         local container = Instance.new("Frame", f)
         container.Size = UDim2.new(1, -20, 1, -60)
         container.Position = UDim2.new(0, 10, 0, 52)
@@ -334,7 +421,6 @@ task.spawn(function()
             row.BorderSizePixel = 0
             Instance.new("UICorner", row).CornerRadius = UDim.new(0, 10)
 
-            -- Macro Execution Button (Name)
             local execBtn = Instance.new("TextButton", row)
             execBtn.Size = UDim2.new(0.55, -5, 1, 0)
             execBtn.BackgroundTransparency = 1
@@ -345,7 +431,6 @@ task.spawn(function()
             execBtn.AutoButtonColor = false
             execBtn.Activated:Connect(executeFunc)
 
-            -- Interactive Keybind Button
             local bindBtn = Instance.new("TextButton", row)
             bindBtn.Size = UDim2.new(0.4, 0, 0.75, 0)
             bindBtn.Position = UDim2.new(0.58, 0, 0.125, 0)
@@ -371,7 +456,85 @@ task.spawn(function()
         createMacroRow("RPG", Config.RPG, function() task.spawn(runRpg) end)
         createMacroRow("NewCombo", Config.NewCombo, function() task.spawn(runNewCombo) end)
 
-        -- Global input listener supporting dynamic rebinds
+        local aimRow = Instance.new("Frame", container)
+        aimRow.Size = UDim2.new(1, 0, 0, 40)
+        aimRow.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
+        aimRow.BackgroundTransparency = 0.2
+        aimRow.BorderSizePixel = 0
+        Instance.new("UICorner", aimRow).CornerRadius = UDim.new(0, 10)
+
+        local aimLabel = Instance.new("TextButton", aimRow)
+        aimLabel.Size = UDim2.new(0.55, -5, 1, 0)
+        aimLabel.BackgroundTransparency = 1
+        aimLabel.Font = Enum.Font.GothamBold
+        aimLabel.Text = "  🎯 Silent Aim"
+        aimLabel.TextColor3 = Color3.fromRGB(240, 240, 240)
+        aimLabel.TextSize, aimLabel.TextXAlignment = 12, Enum.TextXAlignment.Left
+        aimLabel.AutoButtonColor = false
+
+        local aimToggleBtn = Instance.new("TextButton", aimRow)
+        aimToggleBtn.Size = UDim2.new(0.4, 0, 0.75, 0)
+        aimToggleBtn.Position = UDim2.new(0.58, 0, 0.125, 0)
+        aimToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 100)
+        aimToggleBtn.Font = Enum.Font.GothamBold
+        aimToggleBtn.Text = "ON"
+        aimToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        aimToggleBtn.TextSize = 11
+        aimToggleBtn.AutoButtonColor = false
+        Instance.new("UICorner", aimToggleBtn).CornerRadius = UDim.new(0, 8)
+
+        aimToggleBtn.Activated:Connect(function()
+            AimSettings.Enabled = not AimSettings.Enabled
+            if AimSettings.Enabled then
+                aimToggleBtn.Text = "ON"
+                aimToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 100)
+            else
+                aimToggleBtn.Text = "OFF"
+                aimToggleBtn.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
+            end
+        end)
+
+        local fovRow = Instance.new("Frame", container)
+        fovRow.Size = UDim2.new(1, 0, 0, 40)
+        fovRow.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
+        fovRow.BackgroundTransparency = 0.2
+        fovRow.BorderSizePixel = 0
+        Instance.new("UICorner", fovRow).CornerRadius = UDim.new(0, 10)
+
+        local fovLabel = Instance.new("TextButton", fovRow)
+        fovLabel.Size = UDim2.new(0.55, -5, 1, 0)
+        fovLabel.BackgroundTransparency = 1
+        fovLabel.Font = Enum.Font.GothamBold
+        fovLabel.Text = "  🔍 FOV Range"
+        fovLabel.TextColor3 = Color3.fromRGB(240, 240, 240)
+        fovLabel.TextSize, fovLabel.TextXAlignment = 12, Enum.TextXAlignment.Left
+        fovLabel.AutoButtonColor = false
+
+        local fovBtn = Instance.new("TextButton", fovRow)
+        fovBtn.Size = UDim2.new(0.4, 0, 0.75, 0)
+        fovBtn.Position = UDim2.new(0.58, 0, 0.125, 0)
+        fovBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
+        fovBtn.Font = Enum.Font.GothamBold
+        fovBtn.Text = "400px"
+        fovBtn.TextColor3 = Color3.fromRGB(0, 220, 255)
+        fovBtn.TextSize = 11
+        fovBtn.AutoButtonColor = false
+        Instance.new("UICorner", fovBtn).CornerRadius = UDim.new(0, 8)
+
+        local fovIndex = 3
+        fovBtn.Activated:Connect(function()
+            fovIndex = fovIndex + 1
+            if fovIndex > #AimSettings.RadiusPresets then
+                fovIndex = 1
+            end
+            AimSettings.Radius = AimSettings.RadiusPresets[fovIndex]
+            if AimSettings.Radius > 5000 then
+                fovBtn.Text = "Unlimited"
+            else
+                fovBtn.Text = AimSettings.Radius .. "px"
+            end
+        end)
+
         UIS.InputBegan:Connect(function(input, gpe)
             local k = input.KeyCode
             if k == Enum.KeyCode.Unknown then return end
@@ -394,7 +557,6 @@ task.spawn(function()
             end
         end)
 
-        -- Smooth Fade & Toggle Animation (Only toggles if it wasn't dragged)
         local visible = true
         toggleBtn.Activated:Connect(function()
             if tMoved then return end
