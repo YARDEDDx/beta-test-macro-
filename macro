@@ -10,12 +10,11 @@ local p = Players.LocalPlayer
 -- Persistent Memory File Path for Keybinds Only
 local SAVE_FILE = "Exotica_Macro_Settings.json"
 
--- Strict Default Controller Bindings (Guaranteed Default-Safe)
+-- Strict Default Controller Bindings
 local Config = {
     Snowball = { Key = Enum.KeyCode.ButtonY, Label = "❄️ Snowball" },
     Board    = { Key = Enum.KeyCode.Thumbstick1, Label = "🛹 Board Combo" },
-    RPG      = { Key = Enum.KeyCode.DPadLeft, Label = "🚀 RPG (DPad Left)" },
-    Combo    = { Key = Enum.KeyCode.DPadDown, Label = "🔥 Combo" }
+    RPG      = { Key = Enum.KeyCode.DPadLeft, Label = "🚀 RPG (DPad Left)" }
 }
 
 -- Load Saved Keybinds safely without altering defaults if file doesn't exist
@@ -42,7 +41,7 @@ local function saveKeybinds()
     end
 end
 
--- High-Performance Assist Settings (Starts OFF by default)
+-- Assist Settings (Starts OFF by default)
 local AssistSettings = {
     Enabled = false,
     TargetPlayer = "Auto (Closest)",
@@ -55,7 +54,7 @@ local AssistSettings = {
 local currentBestTarget = nil
 local targetVelocities = {}
 
--- High-Performance Assist Loop
+-- Assist Loop
 RunService.RenderStepped:Connect(function(dt)
     if not AssistSettings.Enabled then
         currentBestTarget = nil
@@ -134,7 +133,7 @@ local function pressKey(k)
     end)
 end
 
--- Thread management flags to prevent spam glitches & weapon locking
+-- Thread management to prevent overlapping glitches
 local runningMacroThread = nil
 
 local function executeSafeMacro(macroFunc)
@@ -160,14 +159,14 @@ local function runSnowball()
 end
 
 -- ==========================================
--- EXACT 1:1 XML / AHK TRANSLATION FOR BOARD COMBO
+-- EXACT 1:1 XML MAPPED BOARD COMBO MACRO
 -- ==========================================
 local function runBoard()
-    -- 1 Key
+    -- 1 Key Down / Up
     pressKey(Enum.KeyCode.One)
     task.wait(0.015)
 
-    -- First Left Click (Down/Up - 0.012s delay matching XML)
+    -- First Left Click Down/Up (0.012s delay)
     pcall(function()
         local l = UIS:GetMouseLocation()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
@@ -176,7 +175,7 @@ local function runBoard()
     end)
     task.wait(0.01)
 
-    -- Second Left Click (Down/Up - 0.012s delay matching XML)
+    -- Second Left Click Down/Up (0.012s delay)
     pcall(function()
         local l = UIS:GetMouseLocation()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
@@ -185,7 +184,7 @@ local function runBoard()
     end)
     task.wait(0.01)
 
-    -- 4 Key
+    -- 4 Key Down / Up
     pressKey(Enum.KeyCode.Four)
     task.wait(0.015)
 
@@ -198,11 +197,11 @@ local function runBoard()
     end)
     task.wait(0.02)
 
-    -- 8 Key
+    -- 8 Key Down / Up
     pressKey(Enum.KeyCode.Eight)
     task.wait(0.015)
 
-    -- Left Click (Down/Up - 0.02s delay matching XML)
+    -- Left Click Down/Up (0.02s delay)
     pcall(function()
         local l = UIS:GetMouseLocation()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
@@ -211,7 +210,7 @@ local function runBoard()
     end)
     task.wait(0.01)
 
-    -- Left Click (Down/Up - 0.01s delay matching XML)
+    -- Left Click Down/Up (0.01s delay)
     pcall(function()
         local l = UIS:GetMouseLocation()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
@@ -220,11 +219,11 @@ local function runBoard()
     end)
     task.wait(0.01)
 
-    -- 0 Key
+    -- 0 Key Down / Up
     pressKey(Enum.KeyCode.Zero)
     task.wait(0.015)
 
-    -- Left Click (Down/Up - 0.01s delay matching XML)
+    -- Left Click Down/Up (0.01s delay)
     pcall(function()
         local l = UIS:GetMouseLocation()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
@@ -233,11 +232,11 @@ local function runBoard()
     end)
     task.wait(0.01)
 
-    -- 6 Key
+    -- 6 Key Down / Up
     pressKey(Enum.KeyCode.Six)
     task.wait(0.015)
 
-    -- Final Left Click
+    -- Final Left Click Down/Up
     clickCursor(0)
 end
 
@@ -249,50 +248,6 @@ local function runRpg()
     pressKey(Enum.KeyCode.R)
     pressKey(Enum.KeyCode.Six)
     clickCursor(0)
-end
-
-local function runCombo()
-    local spamming = true
-    task.spawn(function()
-        while spamming do
-            pcall(function()
-                local loc = UIS:GetMouseLocation()
-                VIM:SendMouseButtonEvent(loc.X, loc.Y, 0, true, game, 0)
-                task.wait(0.02)
-                VIM:SendMouseButtonEvent(loc.X, loc.Y, 0, false, game, 0)
-            end)
-            task.wait(0.04)
-        end
-    end)
-
-    pressKey(Enum.KeyCode.One)
-    task.wait(0.15)
-    pressKey(Enum.KeyCode.Two)
-    task.wait(0.15)
-    pressKey(Enum.KeyCode.Zero)
-    task.wait(0.15)
-    pressKey(Enum.KeyCode.Seven)
-    task.wait(0.15)
-    pressKey(Enum.KeyCode.Four)
-    pcall(function()
-        local l = UIS:GetMouseLocation()
-        VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
-        task.wait(0.715)
-        VIM:SendMouseButtonEvent(l.X, l.Y, 0, false, game, 0)
-    end)
-    task.wait(0.15)
-    pressKey(Enum.KeyCode.Nine)
-    task.wait(0.15)
-    pressKey(Enum.KeyCode.Two)
-    task.wait(0.15)
-    pressKey(Enum.KeyCode.Zero)
-    task.wait(0.15)
-    pressKey(Enum.KeyCode.Eight)
-    task.wait(1.0)
-
-    spamming = false
-    task.wait(0.05)
-    pressKey(Enum.KeyCode.Three)
 end
 
 print("Exotica: Master Suite Initialized Successfully!")
@@ -344,7 +299,7 @@ pcall(function()
     end)
 
     local f = Instance.new("Frame", sg)
-    f.Size = UDim2.new(0, 260, 0, 420)
+    f.Size = UDim2.new(0, 260, 0, 380)
     f.Position = UDim2.new(0.02, 55, 0.28, 0)
     f.BackgroundColor3 = Color3.fromRGB(15, 15, 22)
     f.BackgroundTransparency = 0.08
@@ -450,7 +405,6 @@ pcall(function()
     createMacroRow("Snowball", Config.Snowball, function() executeSafeMacro(runSnowball) end)
     createMacroRow("Board", Config.Board, function() executeSafeMacro(runBoard) end)
     createMacroRow("RPG", Config.RPG, function() executeSafeMacro(runRpg) end)
-    createMacroRow("Combo", Config.Combo, function() executeSafeMacro(runCombo) end)
 
     -- Assist Toggle Row (Defaults to OFF)
     local aimRow = Instance.new("Frame", container)
@@ -592,8 +546,6 @@ pcall(function()
                 executeSafeMacro(runBoard)
             elseif k == Config.RPG.Key then
                 executeSafeMacro(runRpg)
-            elseif k == Config.Combo.Key then
-                executeSafeMacro(runCombo)
             end
         end
     end)
