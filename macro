@@ -7,10 +7,10 @@ local HttpService = game:GetService("HttpService")
 local Camera = workspace.CurrentCamera
 local p = Players.LocalPlayer
 
--- Persistent Memory File Path for Delta
+-- Persistent Memory File Path for Delta Keybinds
 local SAVE_FILE = "Exotica_Macro_Settings.json"
 
--- Default Keybinds
+-- Config table: Controller and UI Bindings
 local Config = {
     Snowball = { Key = Enum.KeyCode.ButtonY, Label = "❄️ Snowball" },
     Board    = { Key = Enum.KeyCode.Thumbstick1, Label = "🛹 Board Combo" },
@@ -42,20 +42,18 @@ local function saveKeybinds()
     end
 end
 
--- Execution State Trackers
-local activeMacro = nil
-local listeningMacro = nil
-
--- Assist Settings (Off by default)
+-- High-Performance Aim Assist Settings (Off by default as requested)
 local AssistSettings = {
     Enabled = false,
     TargetPlayer = "Auto (Closest)",
-    Effectiveness = 500,
-    Smoothing = 0.2,
-    WallCheck = true
+    Effectiveness = 400,
+    Smoothing = 0.6,
+    Prediction = 0.12,
+    RadiusPresets = { 150, 250, 400, 600, 9999 }
 }
 
 local currentBestTarget = nil
+local targetVelocities = {}
 
 -- Automated Inventory Slotter Function
 local function sortInventorySlots()
@@ -64,9 +62,8 @@ local function sortInventorySlots()
         local character = p.Character
         if not backpack or not character then return end
 
-        -- Desired Loadout Mapping Rules
         local targetSlots = {
-            [4] = {"Stop Sign", "Weapon"}, -- Fallback slot 4 weapon
+            [4] = {"Stop Sign", "Weapon"},
             [5] = {"RPG"},
             [6] = {"Love Board"},
             [7] = {"Golden Snow"},
@@ -75,25 +72,23 @@ local function sortInventorySlots()
             [0] = {"Parasol"}
         }
 
-        -- Function to move tool to backpack/character slot simulation via tool parent swapping
-        local function equipToSlot(toolName, targetSlotIndex)
+        local function equipToSlot(toolName)
             local item = backpack:FindFirstChild(toolName) or character:FindFirstChild(toolName)
             if item then
-                -- Standard Roblox backpack slot assignment via Parent handling or StarterGui
                 item.Parent = character
-                task.wait(0.05)
+                task.wait(0.04)
             end
         end
 
-        for slotNum, itemNames in pairs(targetSlots) do
+        for _, itemNames in pairs(targetSlots) do
             for _, name in ipairs(itemNames) do
-                equipToSlot(name, slotNum)
+                equipToSlot(name)
             end
         end
     end)
 end
 
--- Assist Engine Loop
+-- High-Performance Assist Loop with Target Selection & Sensitivity
 RunService.RenderStepped:Connect(function(dt)
     if not AssistSettings.Enabled then
         currentBestTarget = nil
@@ -103,36 +98,26 @@ RunService.RenderStepped:Connect(function(dt)
     local closestTarget = nil
     local shortestDist = AssistSettings.Effectiveness
     local viewportCenter = Camera.ViewportSize / 2
-    local char = p.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
 
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= p and (AssistSettings.TargetPlayer == "Auto (Closest)" or plr.Name == AssistSettings.TargetPlayer) then
             if plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
                 local hum = plr.Character:FindFirstChildOfClass("Humanoid")
                 if hum and hum.Health > 0 then
-                    local targetRoot = plr.Character.HumanoidRootPart
-                    
-                    local hasLOS = true
-                    if AssistSettings.WallCheck and root then
-                        local raycastParams = RaycastParams.new()
-                        raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-                        raycastParams.FilterDescendantsInstances = {char, plr.Character}
-                        local rayResult = workspace:Raycast(root.Position, targetRoot.Position - root.Position, raycastParams)
-                        if rayResult then hasLOS = false end
-                    end
+                    local rootPart = plr.Character.HumanoidRootPart
+                    local lastPos = targetVelocities[plr] and targetVelocities[plr].pos or rootPart.Position
+                    local currentPos = rootPart.Position
+                    local velocity = (currentPos - lastPos) / math.max(dt, 0.001)
+                    targetVelocities[plr] = { pos = currentPos, vel = velocity }
 
-                    if hasLOS then
-                        local velocity = targetRoot.AssemblyLinearVelocity
-                        local predictedPos = targetRoot.Position + (velocity * 0.12)
-                        local screenPos, onScreen = Camera:WorldToViewportPoint(predictedPos)
-                        
-                        if onScreen then
-                            local dist = (Vector2.new(screenPos.X, screenPos.Y) - viewportCenter).Magnitude
-                            if dist < shortestDist then
-                                shortestDist = dist
-                                closestTarget = Vector2.new(screenPos.X, screenPos.Y)
-                            end
+                    local predictedPos = currentPos + (velocity * AssistSettings.Prediction)
+                    local screenPos, onScreen = Camera:WorldToViewportPoint(predictedPos)
+                    
+                    if onScreen then
+                        local dist = (Vector2.new(screenPos.X, screenPos.Y) - viewportCenter).Magnitude
+                        if dist < shortestDist then
+                            shortestDist = dist
+                            closestTarget = Vector2.new(screenPos.X, screenPos.Y)
                         end
                     end
                 end
@@ -182,39 +167,39 @@ local function pressKey(k)
     end)
 end
 
--- Snowball Macro
+local isRunning = false
+
 local function runSnowball()
-    if activeMacro == "Snowball" then return end
-    activeMacro = "Snowball"
-
-    task.wait(0.04)
-    if activeMacro ~= "Snowball" then return end
-
+    if isRunning then return end
+    isRunning = true
+    
     pressKey(Enum.KeyCode.Seven)
     clickAtTarget(0)
     task.wait(0.02)
-    if activeMacro ~= "Snowball" then return end
-
+    
     pressKey(Enum.KeyCode.Nine)
     clickAtTarget(0)
     task.wait(0.02)
-    if activeMacro ~= "Snowball" then return end
-
+    
     pressKey(Enum.KeyCode.Six)
     clickAtTarget(0)
-
-    if activeMacro == "Snowball" then activeMacro = nil end
+    
+    task.wait(0.1)
+    isRunning = false
 end
 
--- Board Combo Macro (Slot 4 Buffer)
+-- ==========================================
+-- EXACT XML/AHK TRANSLATION FOR BOARD COMBO
+-- ==========================================
 local function runBoard()
-    if activeMacro == "Board" then return end
-    activeMacro = "Board"
+    if isRunning then return end
+    isRunning = true
 
+    -- 1 Key
     pressKey(Enum.KeyCode.One)
     task.wait(0.015)
-    if activeMacro ~= "Board" then return end
 
+    -- First Left Click (Down/Up - 0.012s delay)
     pcall(function()
         local l = UIS:GetMouseLocation()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
@@ -222,8 +207,8 @@ local function runBoard()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, false, game, 0)
     end)
     task.wait(0.01)
-    if activeMacro ~= "Board" then return end
 
+    -- Second Left Click (Down/Up - 0.012s delay)
     pcall(function()
         local l = UIS:GetMouseLocation()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
@@ -231,12 +216,12 @@ local function runBoard()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, false, game, 0)
     end)
     task.wait(0.01)
-    if activeMacro ~= "Board" then return end
 
+    -- 4 Key
     pressKey(Enum.KeyCode.Four)
-    task.wait(0.09) 
-    if activeMacro ~= "Board" then return end
+    task.wait(0.015)
 
+    -- Mouse Button 5 / XButton2
     pcall(function()
         local l = UIS:GetMouseLocation()
         VIM:SendMouseButtonEvent(l.X, l.Y, 4, true, game, 0)
@@ -244,12 +229,12 @@ local function runBoard()
         VIM:SendMouseButtonEvent(l.X, l.Y, 4, false, game, 0)
     end)
     task.wait(0.02)
-    if activeMacro ~= "Board" then return end
 
+    -- 8 Key
     pressKey(Enum.KeyCode.Eight)
     task.wait(0.015)
-    if activeMacro ~= "Board" then return end
 
+    -- Left Click (Down/Up - 0.02s delay)
     pcall(function()
         local l = UIS:GetMouseLocation()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
@@ -257,8 +242,8 @@ local function runBoard()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, false, game, 0)
     end)
     task.wait(0.01)
-    if activeMacro ~= "Board" then return end
 
+    -- Left Click (Down/Up - 0.01s delay)
     pcall(function()
         local l = UIS:GetMouseLocation()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
@@ -266,12 +251,12 @@ local function runBoard()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, false, game, 0)
     end)
     task.wait(0.01)
-    if activeMacro ~= "Board" then return end
 
+    -- 0 Key
     pressKey(Enum.KeyCode.Zero)
     task.wait(0.015)
-    if activeMacro ~= "Board" then return end
 
+    -- Left Click (Down/Up - 0.01s delay)
     pcall(function()
         local l = UIS:GetMouseLocation()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
@@ -279,50 +264,38 @@ local function runBoard()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, false, game, 0)
     end)
     task.wait(0.01)
-    if activeMacro ~= "Board" then return end
 
+    -- 6 Key
     pressKey(Enum.KeyCode.Six)
     task.wait(0.015)
-    if activeMacro ~= "Board" then return end
 
-    pcall(function()
-        local l = UIS:GetMouseLocation()
-        VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
-        task.wait(0.015)
-        VIM:SendMouseButtonEvent(l.X, l.Y, 0, false, game, 0)
-    end)
+    -- Final Left Click
+    clickCursor(0)
 
-    if activeMacro == "Board" then activeMacro = nil end
+    task.wait(0.1)
+    isRunning = false
 end
 
--- RPG Macro
 local function runRpg()
-    if activeMacro == "RPG" then return end
-    activeMacro = "RPG"
-
+    if isRunning then return end
+    isRunning = true
     pressKey(Enum.KeyCode.Five)
     task.wait(0.1)
-    if activeMacro ~= "RPG" then return end
-
     clickCursor(0)
     task.wait(0.02)
-    if activeMacro ~= "RPG" then return end
-
     pressKey(Enum.KeyCode.R)
     pressKey(Enum.KeyCode.Six)
     clickCursor(0)
-
-    if activeMacro == "RPG" then activeMacro = nil end
+    task.wait(0.2)
+    isRunning = false
 end
 
--- Combo Macro
 local function runCombo()
-    if activeMacro == "Combo" then return end
-    activeMacro = "Combo"
-
+    if isRunning then return end
+    isRunning = true
     local spamming = true
     task.spawn(function()
-        while spamming and activeMacro == "Combo" do
+        while spamming do
             pcall(function()
                 local loc = UIS:GetMouseLocation()
                 VIM:SendMouseButtonEvent(loc.X, loc.Y, 0, true, game, 0)
@@ -335,20 +308,12 @@ local function runCombo()
 
     pressKey(Enum.KeyCode.One)
     task.wait(0.15)
-    if activeMacro ~= "Combo" then spamming = false return end
-
     pressKey(Enum.KeyCode.Two)
     task.wait(0.15)
-    if activeMacro ~= "Combo" then spamming = false return end
-
     pressKey(Enum.KeyCode.Zero)
     task.wait(0.15)
-    if activeMacro ~= "Combo" then spamming = false return end
-
     pressKey(Enum.KeyCode.Seven)
     task.wait(0.15)
-    if activeMacro ~= "Combo" then spamming = false return end
-
     pressKey(Enum.KeyCode.Four)
     pcall(function()
         local l = UIS:GetMouseLocation()
@@ -357,331 +322,412 @@ local function runCombo()
         VIM:SendMouseButtonEvent(l.X, l.Y, 0, false, game, 0)
     end)
     task.wait(0.15)
-    if activeMacro ~= "Combo" then spamming = false return end
-
     pressKey(Enum.KeyCode.Nine)
     task.wait(0.15)
-    if activeMacro ~= "Combo" then spamming = false return end
-
     pressKey(Enum.KeyCode.Two)
     task.wait(0.15)
-    if activeMacro ~= "Combo" then spamming = false return end
-
     pressKey(Enum.KeyCode.Zero)
     task.wait(0.15)
-    if activeMacro ~= "Combo" then spamming = false return end
-
     pressKey(Enum.KeyCode.Eight)
     task.wait(1.0)
-    if activeMacro ~= "Combo" then spamming = false return end
 
     spamming = false
     task.wait(0.05)
     pressKey(Enum.KeyCode.Three)
-
-    if activeMacro == "Combo" then activeMacro = nil end
+    task.wait(0.1)
+    isRunning = false
 end
 
-print("Exotica: Master Suite Beta Initialized Successfully!")
+print("Exotica: Master Suite Initialized Successfully!")
 
--- UI Interface Initialization
-local core = gethui and gethui() or game:GetService("CoreGui")
-pcall(function()
-    local sg = Instance.new("ScreenGui")
-    sg.Name = "ExoticaMasterSuite"
-    sg.ResetOnSpawn = false
-    sg.Parent = core
+task.spawn(function()
+    local core = gethui and gethui() or game:GetService("CoreGui")
+    pcall(function()
+        local sg = Instance.new("ScreenGui")
+        sg.Name = "ExoticaMasterSuite"
+        sg.ResetOnSpawn = false
+        sg.Parent = core
 
-    local toggleBtn = Instance.new("TextButton", sg)
-    toggleBtn.Size = UDim2.new(0, 45, 0, 45)
-    toggleBtn.Position = UDim2.new(0.02, 0, 0.28, 0)
-    toggleBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 28)
-    toggleBtn.Font = Enum.Font.GothamBold
-    toggleBtn.Text = "⚙️"
-    toggleBtn.TextColor3 = Color3.fromRGB(0, 220, 255)
-    toggleBtn.TextSize, toggleBtn.AutoButtonColor = 18, false
-    Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(1, 0)
-    local tStroke = Instance.new("UIStroke", toggleBtn)
-    tStroke.Color = Color3.fromRGB(0, 200, 255)
-    tStroke.Thickness = 2
+        local notif = Instance.new("TextLabel", sg)
+        notif.Size = UDim2.new(0, 320, 0, 45)
+        notif.Position = UDim2.new(0.5, -160, 0.1, 0)
+        notif.BackgroundColor3 = Color3.fromRGB(15, 15, 22)
+        notif.BackgroundTransparency = 1
+        notif.Font = Enum.Font.GothamBold
+        notif.Text = "⚡ Crafted by David for Exotica ⚡"
+        notif.TextColor3 = Color3.fromRGB(0, 220, 255)
+        notif.TextSize = 13
+        notif.TextTransparency = 1
+        Instance.new("UICorner", notif).CornerRadius = UDim.new(0, 10)
+        local nStroke = Instance.new("UIStroke", notif)
+        nStroke.Color = Color3.fromRGB(0, 200, 255)
+        nStroke.Transparency = 1
+        nStroke.Thickness = 2
 
-    local tDragging, tDragStart, tStartPos, tMoved = false, nil, nil, false
-    toggleBtn.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            tDragging = true
-            tDragStart = input.Position
-            tStartPos = toggleBtn.Position
-            tMoved = false
-            local conn
-            conn = input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    tDragging = false
-                    if conn then conn:Disconnect() end
-                end
+        task.spawn(function()
+            local twInfo = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+            TweenService:Create(notif, twInfo, {BackgroundTransparency = 0.1, TextTransparency = 0}):Play()
+            TweenService:Create(nStroke, twInfo, {Transparency = 0.3}):Play()
+            task.wait(3.0)
+            TweenService:Create(notif, twInfo, {BackgroundTransparency = 1, TextTransparency = 1}):Play()
+            TweenService:Create(nStroke, twInfo, {Transparency = 1}):Play()
+            task.wait(0.6)
+            notif:Destroy()
+        end)
+
+        local toggleBtn = Instance.new("TextButton", sg)
+        toggleBtn.Size = UDim2.new(0, 45, 0, 45)
+        toggleBtn.Position = UDim2.new(0.02, 0, 0.28, 0)
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 28)
+        toggleBtn.Font = Enum.Font.GothamBold
+        toggleBtn.Text = "⚙️"
+        toggleBtn.TextColor3 = Color3.fromRGB(0, 220, 255)
+        toggleBtn.TextSize, toggleBtn.AutoButtonColor = 18, false
+        Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(1, 0)
+        local tStroke = Instance.new("UIStroke", toggleBtn)
+        tStroke.Color = Color3.fromRGB(0, 200, 255)
+        tStroke.Thickness = 2
+
+        local tDragging, tDragStart, tStartPos, tMoved = false, nil, nil, false
+        toggleBtn.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                tDragging = true
+                tDragStart = input.Position
+                tStartPos = toggleBtn.Position
+                tMoved = false
+                local conn
+                conn = input.Changed:Connect(function()
+                    if input.UserInputState == Enum.UserInputState.End then
+                        tDragging = false
+                        if conn then conn:Disconnect() end
+                    end
+                end)
+            end
+        end)
+
+        UIS.InputChanged:Connect(function(input)
+            if tDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+                local delta = input.Position - tDragStart
+                if delta.Magnitude > 5 then tMoved = true end
+                toggleBtn.Position = UDim2.new(tStartPos.X.Scale, tStartPos.X.Offset + delta.X, tStartPos.Y.Scale, tStartPos.Y.Offset + delta.Y)
+            end
+        end)
+
+        local f = Instance.new("Frame", sg)
+        f.Size = UDim2.new(0, 260, 0, 460)
+        f.Position = UDim2.new(0.02, 55, 0.28, 0)
+        f.BackgroundColor3 = Color3.fromRGB(15, 15, 22)
+        f.BackgroundTransparency = 0.08
+        f.BorderSizePixel = 0
+        f.Active = true
+        Instance.new("UICorner", f).CornerRadius = UDim.new(0, 16)
+
+        local fStroke = Instance.new("UIStroke", f)
+        fStroke.Color = Color3.fromRGB(0, 200, 255)
+        fStroke.Transparency = 0.4
+        fStroke.Thickness = 2
+
+        local title = Instance.new("TextButton", f)
+        title.Size = UDim2.new(1, 0, 0, 40)
+        title.BackgroundTransparency = 1
+        title.Font = Enum.Font.GothamBold
+        title.Text = "EXOTICA // MACROS"
+        title.TextColor3 = Color3.fromRGB(255, 255, 255)
+        title.TextSize = 14
+        title.AutoButtonColor = false
+
+        local dragging, dragStart, startPos
+        title.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                dragging = true
+                dragStart = input.Position
+                startPos = f.Position
+                local conn
+                conn = input.Changed:Connect(function()
+                    if input.UserInputState == Enum.UserInputState.End then
+                        dragging = false
+                        if conn then conn:Disconnect() end
+                    end
+                end)
+            end
+        end)
+
+        UIS.InputChanged:Connect(function(input)
+            if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+                local delta = input.Position - dragStart
+                f.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+            end
+        end)
+
+        local subtitle = Instance.new("TextLabel", f)
+        subtitle.Size = UDim2.new(1, 0, 0, 20)
+        subtitle.Position = UDim2.new(0, 0, 0, 26)
+        subtitle.BackgroundTransparency = 1
+        subtitle.Font = Enum.Font.GothamMedium
+        subtitle.Text = "Tap key box to rebind • Tap name to run"
+        subtitle.TextColor3 = Color3.fromRGB(140, 140, 170)
+        subtitle.TextSize = 10
+
+        local container = Instance.new("Frame", f)
+        container.Size = UDim2.new(1, -20, 1, -60)
+        container.Position = UDim2.new(0, 10, 0, 52)
+        container.BackgroundTransparency = 1
+
+        local layout = Instance.new("UIListLayout", container)
+        layout.SortOrder = Enum.SortOrder.LayoutOrder
+        layout.Padding = UDim.new(0, 6)
+
+        local keyButtonRefs = {}
+
+        local function createMacroRow(name, data, executeFunc)
+            local row = Instance.new("Frame", container)
+            row.Size = UDim2.new(1, 0, 0, 36)
+            row.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
+            row.BackgroundTransparency = 0.2
+            row.BorderSizePixel = 0
+            Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
+
+            local execBtn = Instance.new("TextButton", row)
+            execBtn.Size = UDim2.new(0.55, -5, 1, 0)
+            execBtn.BackgroundTransparency = 1
+            execBtn.Font = Enum.Font.GothamBold
+            execBtn.Text = "  " .. data.Label
+            execBtn.TextColor3 = Color3.fromRGB(240, 240, 240)
+            execBtn.TextSize, execBtn.TextXAlignment = 11, Enum.TextXAlignment.Left
+            execBtn.AutoButtonColor = false
+            execBtn.Activated:Connect(executeFunc)
+
+            local bindBtn = Instance.new("TextButton", row)
+            bindBtn.Size = UDim2.new(0.4, 0, 0.75, 0)
+            bindBtn.Position = UDim2.new(0.58, 0, 0.125, 0)
+            bindBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
+            bindBtn.Font = Enum.Font.GothamBold
+            bindBtn.Text = tostring(data.Key.Name)
+            bindBtn.TextColor3 = Color3.fromRGB(0, 220, 255)
+            bindBtn.TextSize = 10
+            bindBtn.AutoButtonColor = false
+            Instance.new("UICorner", bindBtn).CornerRadius = UDim.new(0, 6)
+            
+            keyButtonRefs[name] = bindBtn
+
+            bindBtn.Activated:Connect(function()
+                listeningMacro = name
+                bindBtn.Text = "[ Press Key... ]"
+                bindBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
             end)
         end
-    end)
 
-    UIS.InputChanged:Connect(function(input)
-        if tDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            local delta = input.Position - tDragStart
-            if delta.Magnitude > 5 then tMoved = true end
-            toggleBtn.Position = UDim2.new(tStartPos.X.Scale, tStartPos.X.Offset + delta.X, tStartPos.Y.Scale, tStartPos.Y.Offset + delta.Y)
-        end
-    end)
+        createMacroRow("Snowball", Config.Snowball, function() task.spawn(runSnowball) end)
+        createMacroRow("Board", Config.Board, function() task.spawn(runBoard) end)
+        createMacroRow("RPG", Config.RPG, function() task.spawn(runRpg) end)
+        createMacroRow("Combo", Config.Combo, function() task.spawn(runCombo) end)
 
-    local f = Instance.new("Frame", sg)
-    f.Size = UDim2.new(0, 270, 0, 520)
-    f.Position = UDim2.new(0.02, 55, 0.28, 0)
-    f.BackgroundColor3 = Color3.fromRGB(15, 15, 22)
-    f.BackgroundTransparency = 0.08
-    f.BorderSizePixel = 0
-    f.Active = true
-    Instance.new("UICorner", f).CornerRadius = UDim.new(0, 16)
+        -- Inventory Sorter Row
+        local sortRow = Instance.new("Frame", container)
+        sortRow.Size = UDim2.new(1, 0, 0, 36)
+        sortRow.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
+        sortRow.BackgroundTransparency = 0.2
+        Instance.new("UICorner", sortRow).CornerRadius = UDim.new(0, 8)
 
-    local fStroke = Instance.new("UIStroke", f)
-    fStroke.Color = Color3.fromRGB(0, 200, 255)
-    fStroke.Transparency = 0.4
-    fStroke.Thickness = 2
+        local sortLabel = Instance.new("TextButton", sortRow)
+        sortLabel.Size = UDim2.new(0.55, -5, 1, 0)
+        sortLabel.BackgroundTransparency = 1
+        sortLabel.Font = Enum.Font.GothamBold
+        sortLabel.Text = "  🎒 Sort Inventory"
+        sortLabel.TextColor3 = Color3.fromRGB(240, 240, 240)
+        sortLabel.TextSize, sortLabel.TextXAlignment = 11, Enum.TextXAlignment.Left
+        sortLabel.AutoButtonColor = false
 
-    local title = Instance.new("TextButton", f)
-    title.Size = UDim2.new(1, 0, 0, 40)
-    title.BackgroundTransparency = 1
-    title.Font = Enum.Font.GothamBold
-    title.Text = "EXOTICA // MASTER SUITE"
-    title.TextColor3 = Color3.fromRGB(255, 255, 255)
-    title.TextSize = 14
-    title.AutoButtonColor = false
-
-    local container = Instance.new("Frame", f)
-    container.Size = UDim2.new(1, -20, 1, -55)
-    container.Position = UDim2.new(0, 10, 0, 45)
-    container.BackgroundTransparency = 1
-
-    local layout = Instance.new("UIListLayout", container)
-    layout.SortOrder = Enum.SortOrder.LayoutOrder
-    layout.Padding = UDim.new(0, 6)
-
-    local keyButtonRefs = {}
-
-    local function createMacroRow(name, data, executeFunc)
-        local row = Instance.new("Frame", container)
-        row.Size = UDim2.new(1, 0, 0, 36)
-        row.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
-        row.BackgroundTransparency = 0.2
-        row.BorderSizePixel = 0
-        Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
-
-        local execBtn = Instance.new("TextButton", row)
-        execBtn.Size = UDim2.new(0.55, -5, 1, 0)
-        execBtn.BackgroundTransparency = 1
-        execBtn.Font = Enum.Font.GothamBold
-        execBtn.Text = "  " .. data.Label
-        execBtn.TextColor3 = Color3.fromRGB(240, 240, 240)
-        execBtn.TextSize, execBtn.TextXAlignment = 11, Enum.TextXAlignment.Left
-        execBtn.AutoButtonColor = false
-        execBtn.Activated:Connect(executeFunc)
-
-        local bindBtn = Instance.new("TextButton", row)
-        bindBtn.Size = UDim2.new(0.4, 0, 0.75, 0)
-        bindBtn.Position = UDim2.new(0.58, 0, 0.125, 0)
-        bindBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
-        bindBtn.Font = Enum.Font.GothamBold
-        bindBtn.Text = tostring(data.Key.Name)
-        bindBtn.TextColor3 = Color3.fromRGB(0, 220, 255)
-        bindBtn.TextSize = 10
-        bindBtn.AutoButtonColor = false
-        Instance.new("UICorner", bindBtn).CornerRadius = UDim.new(0, 6)
-        
-        keyButtonRefs[name] = bindBtn
-
-        bindBtn.Activated:Connect(function()
-            listeningMacro = name
-            bindBtn.Text = "[ Press Key... ]"
-            bindBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
-        end)
-    end
-
-    createMacroRow("Snowball", Config.Snowball, function() task.spawn(runSnowball) end)
-    createMacroRow("Board", Config.Board, function() task.spawn(runBoard) end)
-    createMacroRow("RPG", Config.RPG, function() task.spawn(runRpg) end)
-    createMacroRow("Combo", Config.Combo, function() task.spawn(runCombo) end)
-
-    -- Inventory Sorter Row Button
-    local sortRow = Instance.new("Frame", container)
-    sortRow.Size = UDim2.new(1, 0, 0, 36)
-    sortRow.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
-    sortRow.BackgroundTransparency = 0.2
-    Instance.new("UICorner", sortRow).CornerRadius = UDim.new(0, 8)
-
-    local sortLabel = Instance.new("TextButton", sortRow)
-    sortLabel.Size = UDim2.new(0.55, -5, 1, 0)
-    sortLabel.BackgroundTransparency = 1
-    sortLabel.Font = Enum.Font.GothamBold
-    sortLabel.Text = "  🎒 Sort Inventory"
-    sortLabel.TextColor3 = Color3.fromRGB(240, 240, 240)
-    sortLabel.TextSize, sortLabel.TextXAlignment = 11, Enum.TextXAlignment.Left
-    sortLabel.AutoButtonColor = false
-
-    local sortBtn = Instance.new("TextButton", sortRow)
-    sortBtn.Size = UDim2.new(0.4, 0, 0.75, 0)
-    sortBtn.Position = UDim2.new(0.58, 0, 0.125, 0)
-    sortBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 200)
-    sortBtn.Font = Enum.Font.GothamBold
-    sortBtn.Text = "AUTO SORT"
-    sortBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    sortBtn.TextSize = 10
-    sortBtn.AutoButtonColor = false
-    Instance.new("UICorner", sortBtn).CornerRadius = UDim.new(0, 6)
-
-    sortBtn.Activated:Connect(function()
-        sortInventorySlots()
-        sortBtn.Text = "SORTED!"
-        task.wait(1.5)
+        local sortBtn = Instance.new("TextButton", sortRow)
+        sortBtn.Size = UDim2.new(0.4, 0, 0.75, 0)
+        sortBtn.Position = UDim2.new(0.58, 0, 0.125, 0)
+        sortBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 200)
+        sortBtn.Font = Enum.Font.GothamBold
         sortBtn.Text = "AUTO SORT"
-    end)
+        sortBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        sortBtn.TextSize = 9
+        sortBtn.AutoButtonColor = false
+        Instance.new("UICorner", sortBtn).CornerRadius = UDim.new(0, 6)
 
-    -- Assist ON/OFF Toggle Row (Off by Default)
-    local aimRow = Instance.new("Frame", container)
-    aimRow.Size = UDim2.new(1, 0, 0, 36)
-    aimRow.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
-    aimRow.BackgroundTransparency = 0.2
-    Instance.new("UICorner", aimRow).CornerRadius = UDim.new(0, 8)
+        sortBtn.Activated:Connect(function()
+            sortInventorySlots()
+            sortBtn.Text = "SORTED!"
+            task.wait(1.5)
+            sortBtn.Text = "AUTO SORT"
+        end)
 
-    local aimLabel = Instance.new("TextButton", aimRow)
-    aimLabel.Size = UDim2.new(0.55, -5, 1, 0)
-    aimLabel.BackgroundTransparency = 1
-    aimLabel.Font = Enum.Font.GothamBold
-    aimLabel.Text = "  🎯 Assist"
-    aimLabel.TextColor3 = Color3.fromRGB(240, 240, 240)
-    aimLabel.TextSize, aimLabel.TextXAlignment = 11, Enum.TextXAlignment.Left
-    aimLabel.AutoButtonColor = false
+        -- Assist Toggle Row (Defaults to OFF)
+        local aimRow = Instance.new("Frame", container)
+        aimRow.Size = UDim2.new(1, 0, 0, 36)
+        aimRow.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
+        aimRow.BackgroundTransparency = 0.2
+        aimRow.BorderSizePixel = 0
+        Instance.new("UICorner", aimRow).CornerRadius = UDim.new(0, 8)
 
-    local aimToggleBtn = Instance.new("TextButton", aimRow)
-    aimToggleBtn.Size = UDim2.new(0.4, 0, 0.75, 0)
-    aimToggleBtn.Position = UDim2.new(0.58, 0, 0.125, 0)
-    aimToggleBtn.BackgroundColor3 = Color3.fromRGB(150, 50, 50) -- Default OFF (Red)
-    aimToggleBtn.Font = Enum.Font.GothamBold
-    aimToggleBtn.Text = "OFF"
-    aimToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    aimToggleBtn.TextSize = 10
-    aimToggleBtn.AutoButtonColor = false
-    Instance.new("UICorner", aimToggleBtn).CornerRadius = UDim.new(0, 6)
+        local aimLabel = Instance.new("TextButton", aimRow)
+        aimLabel.Size = UDim2.new(0.55, -5, 1, 0)
+        aimLabel.BackgroundTransparency = 1
+        aimLabel.Font = Enum.Font.GothamBold
+        aimLabel.Text = "  🎯 Assist"
+        aimLabel.TextColor3 = Color3.fromRGB(240, 240, 240)
+        aimLabel.TextSize, aimLabel.TextXAlignment = 11, Enum.TextXAlignment.Left
+        aimLabel.AutoButtonColor = false
 
-    aimToggleBtn.Activated:Connect(function()
-        AssistSettings.Enabled = not AssistSettings.Enabled
-        if AssistSettings.Enabled then
-            aimToggleBtn.Text = "ON"
-            aimToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 100)
-        else
-            aimToggleBtn.Text = "OFF"
-            aimToggleBtn.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
-        end
-    end)
+        local aimToggleBtn = Instance.new("TextButton", aimRow)
+        aimToggleBtn.Size = UDim2.new(0.4, 0, 0.75, 0)
+        aimToggleBtn.Position = UDim2.new(0.58, 0, 0.125, 0)
+        aimToggleBtn.BackgroundColor3 = Color3.fromRGB(150, 50, 50) -- Default OFF
+        aimToggleBtn.Font = Enum.Font.GothamBold
+        aimToggleBtn.Text = "OFF"
+        aimToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        aimToggleBtn.TextSize = 10
+        aimToggleBtn.AutoButtonColor = false
+        Instance.new("UICorner", aimToggleBtn).CornerRadius = UDim.new(0, 6)
 
-    -- Assist Target Selector Row
-    local targetRow = Instance.new("Frame", container)
-    targetRow.Size = UDim2.new(1, 0, 0, 36)
-    targetRow.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
-    targetRow.BackgroundTransparency = 0.2
-    Instance.new("UICorner", targetRow).CornerRadius = UDim.new(0, 8)
+        aimToggleBtn.Activated:Connect(function()
+            AssistSettings.Enabled = not AssistSettings.Enabled
+            if AssistSettings.Enabled then
+                aimToggleBtn.Text = "ON"
+                aimToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 100)
+            else
+                aimToggleBtn.Text = "OFF"
+                aimToggleBtn.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
+            end
+        end)
 
-    local targetLabel = Instance.new("TextButton", targetRow)
-    targetLabel.Size = UDim2.new(0.55, -5, 1, 0)
-    targetLabel.BackgroundTransparency = 1
-    targetLabel.Font = Enum.Font.GothamBold
-    targetLabel.Text = "  👤 Target"
-    targetLabel.TextColor3 = Color3.fromRGB(240, 240, 240)
-    targetLabel.TextSize, targetLabel.TextXAlignment = 11, Enum.TextXAlignment.Left
-    targetLabel.AutoButtonColor = false
+        -- Target Selector Row
+        local targetRow = Instance.new("Frame", container)
+        targetRow.Size = UDim2.new(1, 0, 0, 36)
+        targetRow.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
+        targetRow.BackgroundTransparency = 0.2
+        Instance.new("UICorner", targetRow).CornerRadius = UDim.new(0, 8)
 
-    local targetBtn = Instance.new("TextButton", targetRow)
-    targetBtn.Size = UDim2.new(0.4, 0, 0.75, 0)
-    targetBtn.Position = UDim2.new(0.58, 0, 0.125, 0)
-    targetBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
-    targetBtn.Font = Enum.Font.GothamBold
-    targetBtn.Text = "Auto (Close)"
-    targetBtn.TextColor3 = Color3.fromRGB(0, 220, 255)
-    targetBtn.TextSize = 9
-    targetBtn.AutoButtonColor = false
-    Instance.new("UICorner", targetBtn).CornerRadius = UDim.new(0, 6)
+        local targetLabel = Instance.new("TextButton", targetRow)
+        targetLabel.Size = UDim2.new(0.55, -5, 1, 0)
+        targetLabel.BackgroundTransparency = 1
+        targetLabel.Font = Enum.Font.GothamBold
+        targetLabel.Text = "  👤 Target"
+        targetLabel.TextColor3 = Color3.fromRGB(240, 240, 240)
+        targetLabel.TextSize, targetLabel.TextXAlignment = 11, Enum.TextXAlignment.Left
+        targetLabel.AutoButtonColor = false
 
-    targetBtn.Activated:Connect(function()
-        if AssistSettings.TargetPlayer == "Auto (Closest)" then
-            for _, plr in ipairs(Players:GetPlayers()) do
-                if plr ~= p then
-                    AssistSettings.TargetPlayer = plr.Name
-                    targetBtn.Text = plr.Name
-                    break
+        local targetBtn = Instance.new("TextButton", targetRow)
+        targetBtn.Size = UDim2.new(0.4, 0, 0.75, 0)
+        targetBtn.Position = UDim2.new(0.58, 0, 0.125, 0)
+        targetBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
+        targetBtn.Font = Enum.Font.GothamBold
+        targetBtn.Text = "Auto (Close)"
+        targetBtn.TextColor3 = Color3.fromRGB(0, 220, 255)
+        targetBtn.TextSize = 9
+        targetBtn.AutoButtonColor = false
+        Instance.new("UICorner", targetBtn).CornerRadius = UDim.new(0, 6)
+
+        targetBtn.Activated:Connect(function()
+            if AssistSettings.TargetPlayer == "Auto (Closest)" then
+                for _, plr in ipairs(Players:GetPlayers()) do
+                    if plr ~= p then
+                        AssistSettings.TargetPlayer = plr.Name
+                        targetBtn.Text = plr.Name
+                        break
+                    end
+                end
+            else
+                AssistSettings.TargetPlayer = "Auto (Closest)"
+                targetBtn.Text = "Auto (Close)"
+            end
+        end)
+
+        -- FOV Range / Sensitivity Row
+        local fovRow = Instance.new("Frame", container)
+        fovRow.Size = UDim2.new(1, 0, 0, 36)
+        fovRow.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
+        fovRow.BackgroundTransparency = 0.2
+        fovRow.BorderSizePixel = 0
+        Instance.new("UICorner", fovRow).CornerRadius = UDim.new(0, 8)
+
+        local fovLabel = Instance.new("TextButton", fovRow)
+        fovLabel.Size = UDim2.new(0.55, -5, 1, 0)
+        fovLabel.BackgroundTransparency = 1
+        fovLabel.Font = Enum.Font.GothamBold
+        fovLabel.Text = "  🔍 Sensitivity"
+        fovLabel.TextColor3 = Color3.fromRGB(240, 240, 240)
+        fovLabel.TextSize, fovLabel.TextXAlignment = 11, Enum.TextXAlignment.Left
+        fovLabel.AutoButtonColor = false
+
+        local fovBtn = Instance.new("TextButton", fovRow)
+        fovBtn.Size = UDim2.new(0.4, 0, 0.75, 0)
+        fovBtn.Position = UDim2.new(0.58, 0, 0.125, 0)
+        fovBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
+        fovBtn.Font = Enum.Font.GothamBold
+        fovBtn.Text = "400px"
+        fovBtn.TextColor3 = Color3.fromRGB(0, 220, 255)
+        fovBtn.TextSize = 10
+        fovBtn.AutoButtonColor = false
+        Instance.new("UICorner", fovBtn).CornerRadius = UDim.new(0, 6)
+
+        local fovIndex = 3
+        fovBtn.Activated:Connect(function()
+            fovIndex = fovIndex + 1
+            if fovIndex > #AssistSettings.RadiusPresets then
+                fovIndex = 1
+            end
+            AssistSettings.Effectiveness = AssistSettings.RadiusPresets[fovIndex]
+            if AssistSettings.Effectiveness > 5000 then
+                fovBtn.Text = "Unlimited"
+            else
+                fovBtn.Text = AssistSettings.Effectiveness .. "px"
+            end
+        end)
+
+        UIS.InputBegan:Connect(function(input, gpe)
+            local k = input.KeyCode
+            if k == Enum.KeyCode.Unknown then return end
+
+            if listeningMacro then
+                Config[listeningMacro].Key = k
+                keyButtonRefs[listeningMacro].Text = tostring(k.Name)
+                keyButtonRefs[listeningMacro].TextColor3 = Color3.fromRGB(0, 220, 255)
+                listeningMacro = nil
+                saveKeybinds()
+            else
+                if k == Config.Snowball.Key then
+                    task.spawn(runSnowball)
+                elseif k == Config.Board.Key then
+                    task.spawn(runBoard)
+                elseif k == Config.RPG.Key then
+                    task.spawn(runRpg)
+                elseif k == Config.Combo.Key then
+                    task.spawn(runCombo)
                 end
             end
-        else
-            AssistSettings.TargetPlayer = "Auto (Closest)"
-            targetBtn.Text = "Auto (Close)"
-        end
-    end)
+        end)
 
-    -- Sensitivity / Effective Distance Range Row
-    local rangeRow = Instance.new("Frame", container)
-    rangeRow.Size = UDim2.new(1, 0, 0, 36)
-    rangeRow.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
-    rangeRow.BackgroundTransparency = 0.2
-    Instance.new("UICorner", rangeRow).CornerRadius = UDim.new(0, 8)
+        local visible = true
+        toggleBtn.Activated:Connect(function()
+            if tMoved then return end
+            visible = not visible
+            local targetTrans = visible and 0.08 or 1
+            local textTrans = visible and 0 or 1
+            local info = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
-    local rangeLabel = Instance.new("TextButton", rangeRow)
-    rangeLabel.Size = UDim2.new(0.55, -5, 1, 0)
-    rangeLabel.BackgroundTransparency = 1
-    rangeLabel.Font = Enum.Font.GothamBold
-    rangeLabel.Text = "  📏 Sensitivity"
-    rangeLabel.TextColor3 = Color3.fromRGB(240, 240, 240)
-    rangeLabel.TextSize, rangeLabel.TextXAlignment = 11, Enum.TextXAlignment.Left
-    rangeLabel.AutoButtonColor = false
+            TweenService:Create(f, info, {BackgroundTransparency = targetTrans}):Play()
+            TweenService:Create(fStroke, info, {Transparency = visible and 0.4 or 1}):Play()
+            TweenService:Create(title, info, {TextTransparency = textTrans}):Play()
+            TweenService:Create(subtitle, info, {TextTransparency = textTrans}):Play()
 
-    local rangeBtn = Instance.new("TextButton", rangeRow)
-    rangeBtn.Size = UDim2.new(0.4, 0, 0.75, 0)
-    rangeBtn.Position = UDim2.new(0.58, 0, 0.125, 0)
-    rangeBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
-    rangeBtn.Font = Enum.Font.GothamBold
-    rangeBtn.Text = "500px"
-    rangeBtn.TextColor3 = Color3.fromRGB(0, 220, 255)
-    rangeBtn.TextSize = 10
-    rangeBtn.AutoButtonColor = false
-    Instance.new("UICorner", rangeBtn).CornerRadius = UDim.new(0, 6)
-
-    local presets = { 200, 350, 500, 800, 1500 }
-    local presetIdx = 3
-    rangeBtn.Activated:Connect(function()
-        presetIdx = presetIdx % #presets + 1
-        AssistSettings.Effectiveness = presets[presetIdx]
-        rangeBtn.Text = AssistSettings.Effectiveness .. "px"
-    end)
-
-    UIS.InputBegan:Connect(function(input, gpe)
-        local k = input.KeyCode
-        if k == Enum.KeyCode.Unknown then return end
-
-        if listeningMacro then
-            Config[listeningMacro].Key = k
-            keyButtonRefs[listeningMacro].Text = tostring(k.Name)
-            keyButtonRefs[listeningMacro].TextColor3 = Color3.fromRGB(0, 220, 255)
-            listeningMacro = nil
-            saveKeybinds() -- Saves keybind to memory file automatically
-        else
-            if k == Config.Snowball.Key then
-                task.spawn(runSnowball)
-            elseif k == Config.Board.Key then
-                task.spawn(runBoard)
-            elseif k == Config.RPG.Key then
-                task.spawn(runRpg)
-            elseif k == Config.Combo.Key then
-                task.spawn(runCombo)
+            for _, row in ipairs(container:GetChildren()) do
+                if row:IsA("Frame") then
+                    TweenService:Create(row, info, {BackgroundTransparency = visible and 0.2 or 1}):Play()
+                    for _, child in ipairs(row:GetChildren()) do
+                        if child:IsA("TextButton") then
+                            TweenService:Create(child, info, {TextTransparency = textTrans}):Play()
+                            if child.BackgroundColor3 ~= Color3.fromRGB(24, 24, 34) and child ~= row then
+                                TweenService:Create(child, info, {BackgroundTransparency = visible and 0 or 1}):Play()
+                            end
+                        end
+                    end
+                end
             end
-        end
-    end)
-
-    local visible = true
-    toggleBtn.Activated:Connect(function()
-        visible = not visible
-        f.Visible = visible
+        end)
     end)
 end)
