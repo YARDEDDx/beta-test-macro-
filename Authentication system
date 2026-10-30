@@ -8,8 +8,34 @@ local player = Players.LocalPlayer
 -- ==========================================
 local name = "Exotica Macros"
 local ownerid = "kFHLyWbpTo"
+local version = "1.0"
 
--- 1. Create Login UI for Delta
+-- Global Session Variable
+local sessionid = nil
+
+-- 1. Perform KeyAuth Initialization
+local function initKeyAuth()
+    local hwid = player.UserId .. "_" .. tostring(game.JobId ~= "" and game.JobId or "Studio")
+    local initUrl = string.format("https://keyauth.win/api/1.2/?type=init&name=%s&ownerid=%s&ver=%s", name, ownerid, version)
+    
+    local success, response = pcall(function()
+        return request({
+            Url = initUrl,
+            Method = "GET"
+        })
+    end)
+
+    if success and response and response.StatusCode == 200 then
+        local data = HttpService:JSONDecode(response.Body)
+        if data.success then
+            sessionid = data.sessionid
+            return true
+        end
+    end
+    return false
+end
+
+-- 2. Create Login UI for Delta
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "ExoticaKeyLoader"
 screenGui.ResetOnSpawn = false
@@ -57,7 +83,12 @@ submitBtn.TextSize = 14
 local btnCorner = Instance.new("UICorner", submitBtn)
 btnCorner.CornerRadius = UDim.new(0, 6)
 
--- 2. Handle Verification Logic & HWID Locking
+-- Run Init in Background
+task.spawn(function()
+    initKeyAuth()
+end)
+
+-- 3. Handle Verification Logic & HWID Locking
 submitBtn.Activated:Connect(function()
     local enteredKey = textBox.Text
     if enteredKey == "" then
@@ -67,11 +98,18 @@ submitBtn.Activated:Connect(function()
 
     submitBtn.Text = "Verifying..."
     
-    -- Generate unique HWID fingerprint based on user ID and session
-    local hwid = player.UserId .. "_" .. tostring(game.JobId ~= "" and game.JobId or "Studio")
+    if not sessionid then
+        local initialized = initKeyAuth()
+        if not initialized then
+            submitBtn.Text = "Verify Key"
+            textBox.Text = ""
+            textBox.PlaceholderText = "Session init failed! Retry."
+            return
+        end
+    end
 
-    -- KeyAuth API endpoint check
-    local url = string.format("https://keyauth.win/api/1.2/?name=%s&ownerid=%s&type=license&key=%s&hwid=%s", name, ownerid, enteredKey, hwid)
+    local hwid = player.UserId .. "_" .. tostring(game.JobId ~= "" and game.JobId or "Studio")
+    local url = string.format("https://keyauth.win/api/1.2/?type=license&key=%s&hwid=%s&sessionid=%s&name=%s&ownerid=%s", enteredKey, hwid, sessionid, name, ownerid)
     
     local success, response = pcall(function()
         return request({
@@ -80,16 +118,14 @@ submitBtn.Activated:Connect(function()
         })
     end)
 
-    if success and response.StatusCode == 200 then
+    if success and response and response.StatusCode == 200 then
         local data = HttpService:JSONDecode(response.Body)
         if data.success then
             submitBtn.Text = "Success! Loading..."
             task.wait(1)
             screenGui:Destroy()
             
-            -- 3. Fetch and execute your obfuscated macro script from GitHub with cache-busting
             local mainScriptUrl = "https://raw.githubusercontent.com/YARDEDDx/beta-test-macro-/refs/heads/main/macro?nocache=" .. tostring(tick())
-            
             local fetchSuccess, result = pcall(function()
                 return game:HttpGet(mainScriptUrl)
             end)
