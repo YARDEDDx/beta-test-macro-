@@ -1,3 +1,7 @@
+-- Inside your loader, right after successful KeyAuth verification:
+_G.ExoticaAuthorizedSession = true
+local fn, err = loadstring(result)
+if fn then pcall(fn) end
 local HttpService = game:GetService("HttpService")
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
