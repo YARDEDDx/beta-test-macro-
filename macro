@@ -102,7 +102,8 @@ Players.PlayerRemoving:Connect(function(plr) lastPositions[plr] = nil end)
 -- TIMESTAMP MACRO ENGINE
 -- Every event has an absolute time (ms) from trigger. Each Heartbeat fires
 -- all events that are due, so delays never accumulate and several events
--- can land in one frame. A down and its matching up never share a frame.
+-- can land in one frame. A down and its matching up never share a frame,
+-- except 0ms taps, which fire together like the hardware macro does.
 -- ==========================================
 local Engine = { run = nil, conn = nil }
 
@@ -156,7 +157,7 @@ local function stepEngine()
     while run.i <= #events do
         local e = events[run.i]
         if e.t > now then break end
-        if not e.down and downThisFrame[e.id] then break end -- push up to next frame
+        if not e.down and not e.instant and downThisFrame[e.id] then break end -- push up to next frame (0ms taps excepted)
         sendEvent(e, run)
         if e.down then downThisFrame[e.id] = true end
         run.i = run.i + 1
@@ -181,7 +182,7 @@ local function newSeq()
     local function add(kind, code, hold, gap, aim)
         s.n = s.n + 1
         table.insert(s.events, { t = s.t, kind = kind, code = code, down = true, id = s.n, aim = aim })
-        table.insert(s.events, { t = s.t + hold, kind = kind, code = code, down = false, id = s.n })
+        table.insert(s.events, { t = s.t + hold, kind = kind, code = code, down = false, id = s.n, instant = (hold == 0) })
         s.t = s.t + hold + (gap or 0)
         return s
     end
@@ -193,20 +194,23 @@ end
 
 local KC = Enum.KeyCode
 
--- Board combo: 1:1 with the AHK timeline (total 209ms)
+-- Board combo: built event-for-event from the Razer Synapse XML (114ms total).
+-- Args are hold (ms between down and up) then gap (ms of delay after the up).
+-- A hold of 0 is an instant tap, exactly as the XML has it.
 local BoardSeq = newSeq()
-    .key(KC.One, 15)
+    .key(KC.One, 0)
     .click(12)
     .click(12)
-    .key(KC.Four, 15)
-    .mouse(4, 15, 20) -- XButton2 (may be ignored by VirtualInputManager)
-    .key(KC.Eight, 15)
+    .key(KC.Four, 0)
+    .click(0, 20) -- the XML's slot 4 step, sent as a left click (no side button)
+    .key(KC.Eight, 0)
     .click(20)
+    .click(20)
+    .click(10)
+    .key(KC.Zero, 0)
     .click(10, 10)
-    .key(KC.Zero, 15)
-    .click(10, 10)
-    .key(KC.Six, 15)
-    .click(15)
+    .key(KC.Six, 0)
+    .click(0)
     .events
 
 local SnowballSeq = newSeq()
