@@ -11,71 +11,33 @@ local sessionid = nil
 
 print("--- LOADER STARTED ---")
 
--- Safe Request Helper with detailed debugging
 local function safeRequest(requestData)
     local reqFunc = request or (syn and syn.request) or (http and http.request)
-    if not reqFunc then
-        warn("[DEBUG] No global HTTP request function found in this executor!")
-        return nil
-    end
-    
-    local success, res = pcall(function()
-        return reqFunc(requestData)
-    end)
-    
-    if not success then
-        warn("[DEBUG] HTTP Request execution failed: " .. tostring(res))
-        return nil
-    end
+    if not reqFunc then return nil end
+    local success, res = pcall(function() return reqFunc(requestData) end)
+    if not success then return nil end
     return res
 end
 
 local function initKeyAuth()
-    print("[DEBUG] Initializing KeyAuth session...")
     local initUrl = string.format("https://keyauth.win/api/1.2/?type=init&name=%s&ownerid=%s&ver=%s", name, ownerid, version)
-    
-    local response = safeRequest({
-        Url = initUrl,
-        Method = "GET"
-    })
-
+    local response = safeRequest({ Url = initUrl, Method = "GET" })
     if response and response.StatusCode == 200 then
-        local successDec, data = pcall(function()
-            return HttpService:JSONDecode(response.Body)
-        end)
+        local successDec, data = pcall(function() return HttpService:JSONDecode(response.Body) end)
         if successDec and data and data.success then
             sessionid = data.sessionid
-            print("[DEBUG] Session initialized successfully:", sessionid)
             return true
-        else
-            warn("[DEBUG] Init JSON decode failed or returned false:", response.Body)
         end
-    else
-        warn("[DEBUG] Init HTTP request failed or bad status code.")
     end
     return false
 end
 
 local function executeMasterScript()
-    print("[DEBUG] Fetching master script...")
     local mainScriptUrl = "https://raw.githubusercontent.com/YARDEDDx/beta-test-macro-/refs/heads/main/macro?nocache=" .. tostring(tick())
-    
-    local fetchSuccess, result = pcall(function()
-        return game:HttpGet(mainScriptUrl)
-    end)
-
-    if not fetchSuccess or not result or result == "" then
-        warn("[DEBUG] Failed to fetch master script from GitHub!")
-        return
-    end
-
+    local fetchSuccess, result = pcall(function() return game:HttpGet(mainScriptUrl) end)
+    if not fetchSuccess or not result or result == "" then return end
     local fn, err = loadstring(result)
-    if not fn then
-        warn("[DEBUG] Compile Error: " .. tostring(err))
-        return
-    end
-
-    print("[DEBUG] Executing Master Suite...")
+    if not fn then return end
     pcall(fn)
 end
 
@@ -88,25 +50,15 @@ local function validateKey(keyToTest)
     local hwid = player.UserId .. "_" .. tostring(game.JobId ~= "" and game.JobId or "Studio")
     local url = string.format("https://keyauth.win/api/1.2/?type=license&key=%s&hwid=%s&sessionid=%s&name=%s&ownerid=%s", keyToTest, hwid, sessionid, name, ownerid)
 
-    local response = safeRequest({
-        Url = url,
-        Method = "GET"
-    })
-
+    local response = safeRequest({ Url = url, Method = "GET" })
     if response and response.StatusCode == 200 then
-        local successDec, data = pcall(function()
-            return HttpService:JSONDecode(response.Body)
-        end)
+        local successDec, data = pcall(function() return HttpService:JSONDecode(response.Body) end)
         if successDec and data then
             if data.success then
-                if writefile then
-                    pcall(function() writefile(saveFileName, keyToTest) end)
-                end
+                if writefile then pcall(function() writefile(saveFileName, keyToTest) end) end
                 return true, "Success"
             else
-                if isfile and isfile(saveFileName) and delfile then
-                    pcall(function() delfile(saveFileName) end)
-                end
+                if isfile and isfile(saveFileName) and delfile then pcall(function() delfile(saveFileName) end) end
                 return false, data.message or "Invalid Key"
             end
         end
@@ -114,30 +66,20 @@ local function validateKey(keyToTest)
     return false, "Connection Error"
 end
 
--- Auto-login check
 task.spawn(function()
-    local readSuccess, fileExists = pcall(function()
-        return isfile and isfile(saveFileName)
-    end)
-    
+    local readSuccess, fileExists = pcall(function() return isfile and isfile(saveFileName) end)
     if readSuccess and fileExists then
-        local readOk, savedKey = pcall(function()
-            return readfile(saveFileName)
-        end)
+        local readOk, savedKey = pcall(function() return readfile(saveFileName) end)
         if readOk and savedKey and savedKey ~= "" then
-            print("[DEBUG] Attempting auto-login with saved key...")
             local isValid, msg = validateKey(savedKey)
             if isValid then
                 executeMasterScript()
                 return
-            else
-                print("[DEBUG] Saved key check failed:", msg)
             end
         end
     end
 
-    -- Create UI if no auto-login
-    local uiSuccess, uiErr = pcall(function()
+    pcall(function()
         local screenGui = Instance.new("ScreenGui")
         screenGui.Name = "ExoticaKeyLoader"
         screenGui.ResetOnSpawn = false
@@ -180,7 +122,7 @@ task.spawn(function()
         submitBtn.Font = Enum.Font.GothamBold
         submitBtn.Text = "Verify Key"
         submitBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        submitBtn.TextSize4 = 14
+        submitBtn.TextSize = 14 -- Fixed typo here
 
         local btnCorner = Instance.new("UICorner", submitBtn)
         btnCorner.CornerRadius = UDim.new(0, 6)
@@ -206,8 +148,4 @@ task.spawn(function()
             end
         end)
     end)
-    
-    if not uiSuccess then
-        warn("[DEBUG] Failed to create login UI:", uiErr)
-    end
 end)
