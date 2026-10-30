@@ -1,7 +1,3 @@
--- Inside your loader, right after successful KeyAuth verification:
-_G.ExoticaAuthorizedSession = true
-local fn, err = loadstring(result)
-if fn then pcall(fn) end
 local HttpService = game:GetService("HttpService")
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
@@ -42,6 +38,10 @@ local function executeMasterScript()
     local mainScriptUrl = "https://raw.githubusercontent.com/YARDEDDx/beta-test-macro-/refs/heads/main/macro?nocache=" .. tostring(tick())
     local fetchSuccess, result = pcall(function() return game:HttpGet(mainScriptUrl) end)
     if not fetchSuccess or not result or result == "" then return end
+    
+    -- Set the authorized session token right before running the master script!
+    _G.ExoticaAuthorizedSession = true 
+    
     local fn, err = loadstring(result)
     if not fn then return end
     pcall(fn)
@@ -53,7 +53,7 @@ local function validateKey(keyToTest)
         if not inited then return false, "Init Failed" end
     end
 
-    local hwid = player.UserId .. "_" .. tostring(game.JobId ~= "" and game.JobId or "Studio")
+    local hwid = player.UserId "_" .. tostring(game.JobId ~= "" and game.JobId or "Studio")
     local url = string.format("https://keyauth.win/api/1.2/?type=license&key=%s&hwid=%s&sessionid=%s&name=%s&ownerid=%s", keyToTest, hwid, sessionid, name, ownerid)
 
     local response = safeRequest({ Url = url, Method = "GET" })
@@ -96,7 +96,7 @@ task.spawn(function()
         frame.Position = UDim2.new(0.5, -160, 0.5, -80)
         frame.BackgroundColor3 = Color3.fromRGB(18, 18, 26)
         frame.BorderSizePixel = 0
-        frame.BackgroundTransparency = 1 -- Start fully transparent for fade-in
+        frame.BackgroundTransparency = 1
 
         local uiCorner = Instance.new("UICorner", frame)
         uiCorner.CornerRadius = UDim.new(0, 8)
@@ -139,14 +139,12 @@ task.spawn(function()
         local btnCorner = Instance.new("UICorner", submitBtn)
         btnCorner.CornerRadius = UDim.new(0, 6)
 
-        -- Fade In Animation
         local tweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
         TweenService:Create(frame, tweenInfo, {BackgroundTransparency = 0}):Play()
         TweenService:Create(title, tweenInfo, {TextTransparency = 0}):Play()
         TweenService:Create(textBox, tweenInfo, {BackgroundTransparency = 0, TextTransparency = 0}):Play()
         TweenService:Create(submitBtn, tweenInfo, {BackgroundTransparency = 0, TextTransparency = 0}):Play()
 
-        -- Draggable UI Logic
         local dragging, dragInput, dragStart, startPos
         frame.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -174,7 +172,6 @@ task.spawn(function()
             end
         end)
 
-        -- Submit Action
         submitBtn.Activated:Connect(function()
             local enteredKey = textBox.Text
             if enteredKey == "" then
@@ -192,7 +189,7 @@ task.spawn(function()
             else
                 submitBtn.Text = "Verify Key"
                 textBox.Text = ""
-                textBox.PlaceholderText = msg -- Shows KeyAuth's exact error (e.g. "Invalid Key")
+                textBox.PlaceholderText = msg
             end
         end)
     end)
