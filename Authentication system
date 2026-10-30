@@ -14,12 +14,29 @@ local version = "1.0"
 local saveFileName = "ExoticaKey.txt"
 local sessionid = nil
 
+-- Safe HTTP Request Wrapper (Supports Delta / Synapse / Standard executors)
+local function safeRequest(requestData)
+    if request then
+        return request(requestData)
+    elseif syn and syn.request then
+        return syn.request(requestData)
+    elseif http and http.request then
+        return http.request(requestData)
+    else
+        -- Fallback if standard request is missing
+        return {
+            StatusCode = 500,
+            Body = '{"success":false,"message":"Executor missing request function"}'
+        }
+    end
+end
+
 -- 1. Helper Function: Perform KeyAuth Init
 local function initKeyAuth()
     local initUrl = string.format("https://keyauth.win/api/1.2/?type=init&name=%s&ownerid=%s&ver=%s", name, ownerid, version)
     
     local success, response = pcall(function()
-        return request({
+        return safeRequest({
             Url = initUrl,
             Method = "GET"
         })
@@ -69,7 +86,7 @@ local function validateKey(keyToTest)
     local url = string.format("https://keyauth.win/api/1.2/?type=license&key=%s&hwid=%s&sessionid=%s&name=%s&ownerid=%s", keyToTest, hwid, sessionid, name, ownerid)
 
     local success, response = pcall(function()
-        return request({
+        return safeRequest({
             Url = url,
             Method = "GET"
         })
@@ -78,7 +95,6 @@ local function validateKey(keyToTest)
     if success and response and response.StatusCode == 200 then
         local data = HttpService:JSONDecode(response.Body)
         if data.success then
-            -- Save key locally upon successful verification
             if writefile then
                 pcall(function()
                     writefile(saveFileName, keyToTest)
@@ -86,7 +102,6 @@ local function validateKey(keyToTest)
             end
             return true, "Success"
         else
-            -- Delete invalid/expired key from local storage
             if isfile and isfile(saveFileName) and delfile then
                 pcall(function() delfile(saveFileName) end)
             end
@@ -107,14 +122,13 @@ task.spawn(function()
             local isValid, msg = validateKey(savedKey)
             if isValid then
                 executeMasterScript()
-                return -- Exit without creating UI
+                return 
             else
                 warn("Saved key expired or invalid: " .. tostring(msg))
             end
         end
     end
 
-    -- If no saved key or auto-login failed, show UI
     createLoginUI()
 end)
 
@@ -125,7 +139,13 @@ function createLoginUI()
     local screenGui = Instance.new("ScreenGui")
     screenGui.Name = "ExoticaKeyLoader"
     screenGui.ResetOnSpawn = false
-    screenGui.Parent = (gethui and gethui()) or CoreGui
+    
+    local parentSuccess = pcall(function()
+        screenGui.Parent = (gethui and gethui()) or CoreGui
+    end)
+    if not parentSuccess then
+        screenGui.Parent = player:WaitForChild("PlayerGui")
+    end
 
     local frame = Instance.new("Frame", screenGui)
     frame.Size = UDim2.new(0, 320, 0, 160)
