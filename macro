@@ -1,332 +1,262 @@
 local UIS = game:GetService("UserInputService")
 local Players = game:GetService("Players")
 local VIM = game:GetService("VirtualInputManager")
-local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
 local Camera = workspace.CurrentCamera
 local p = Players.LocalPlayer
+local clock = os.clock
 
--- Persistent Memory File Path for Keybinds Only
+-- ==========================================
+-- CONFIG / KEYBINDS
+-- ==========================================
 local SAVE_FILE = "Exotica_Macro_Settings.json"
 
--- Strict Default Controller Bindings
+-- Hardcoded defaults. The save file only overrides these after a UI rebind.
 local Config = {
-    Snowball = { Key = Enum.KeyCode.ButtonY, Label = "❄️ Snowball" },
-    Board    = { Key = Enum.KeyCode.Thumbstick1, Label = "🛹 Board Combo" },
-    RPG      = { Key = Enum.KeyCode.DPadLeft, Label = "🚀 RPG (DPad Left)" }
+    Snowball = { Key = Enum.KeyCode.ButtonY,      Label = "❄️ Snowball" },
+    Board    = { Key = Enum.KeyCode.Thumbstick1,  Label = "🛹 Board Combo" },
+    RPG      = { Key = Enum.KeyCode.DPadLeft,     Label = "🚀 RPG" },
 }
 
--- Load Saved Keybinds safely without altering defaults if file doesn't exist
 if writefile and readfile and isfile and isfile(SAVE_FILE) then
     pcall(function()
         local data = HttpService:JSONDecode(readfile(SAVE_FILE))
-        for macroName, keyCodeName in pairs(data) do
-            if Config[macroName] and Enum.KeyCode[keyCodeName] then
-                Config[macroName].Key = Enum.KeyCode[keyCodeName]
+        for macroName, keyName in pairs(data) do
+            local ok, kc = pcall(function() return Enum.KeyCode[keyName] end)
+            if ok and kc and Config[macroName] then
+                Config[macroName].Key = kc
             end
         end
     end)
 end
 
 local function saveKeybinds()
-    if writefile then
-        pcall(function()
-            local data = {}
-            for macroName, info in pairs(Config) do
-                data[macroName] = info.Key.Name
-            end
-            writefile(SAVE_FILE, HttpService:JSONEncode(data))
-        end)
-    end
+    if not writefile then return end
+    pcall(function()
+        local data = {}
+        for macroName, info in pairs(Config) do
+            data[macroName] = info.Key.Name
+        end
+        writefile(SAVE_FILE, HttpService:JSONEncode(data))
+    end)
 end
 
--- Assist Settings (Starts OFF by default)
+-- ==========================================
+-- ASSIST (starts OFF)
+-- ==========================================
 local AssistSettings = {
     Enabled = false,
     TargetPlayer = "Auto (Closest)",
     Effectiveness = 400,
     Smoothing = 0.6,
     Prediction = 0.12,
-    RadiusPresets = { 150, 250, 400, 600, 9999 }
+    RadiusPresets = { 150, 250, 400, 600, 9999 },
 }
 
 local currentBestTarget = nil
-local targetVelocities = {}
+local lastPositions = {}
 
--- Assist Loop
 RunService.RenderStepped:Connect(function(dt)
     if not AssistSettings.Enabled then
         currentBestTarget = nil
         return
     end
 
-    local closestTarget = nil
-    local shortestDist = AssistSettings.Effectiveness
-    local viewportCenter = Camera.ViewportSize / 2
+    local closest, shortest = nil, AssistSettings.Effectiveness
+    local center = Camera.ViewportSize / 2
+    local safeDt = math.max(dt, 0.001)
 
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= p and (AssistSettings.TargetPlayer == "Auto (Closest)" or plr.Name == AssistSettings.TargetPlayer) then
-            if plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
-                local hum = plr.Character:FindFirstChildOfClass("Humanoid")
-                if hum and hum.Health > 0 then
-                    local rootPart = plr.Character.HumanoidRootPart
-                    local lastPos = targetVelocities[plr] and targetVelocities[plr].pos or rootPart.Position
-                    local currentPos = rootPart.Position
-                    local velocity = (currentPos - lastPos) / math.max(dt, 0.001)
-                    targetVelocities[plr] = { pos = currentPos, vel = velocity }
-
-                    local predictedPos = currentPos + (velocity * AssistSettings.Prediction)
-                    local screenPos, onScreen = Camera:WorldToViewportPoint(predictedPos)
-                    
-                    if onScreen then
-                        local dist = (Vector2.new(screenPos.X, screenPos.Y) - viewportCenter).Magnitude
-                        if dist < shortestDist then
-                            shortestDist = dist
-                            closestTarget = Vector2.new(screenPos.X, screenPos.Y)
-                        end
+            local char = plr.Character
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            if root and hum and hum.Health > 0 then
+                local pos = root.Position
+                local last = lastPositions[plr] or pos
+                lastPositions[plr] = pos
+                local predicted = pos + ((pos - last) / safeDt) * AssistSettings.Prediction
+                local sp, onScreen = Camera:WorldToViewportPoint(predicted)
+                if onScreen then
+                    local v = Vector2.new(sp.X, sp.Y)
+                    local d = (v - center).Magnitude
+                    if d < shortest then
+                        shortest, closest = d, v
                     end
                 end
             end
         end
     end
 
-    if closestTarget then
-        if currentBestTarget then
-            currentBestTarget = currentBestTarget:Lerp(closestTarget, AssistSettings.Smoothing)
-        else
-            currentBestTarget = closestTarget
-        end
+    if closest then
+        currentBestTarget = currentBestTarget and currentBestTarget:Lerp(closest, AssistSettings.Smoothing) or closest
     else
         currentBestTarget = nil
     end
 end)
 
-local function clickCursor(b)
-    pcall(function()
-        local loc = UIS:GetMouseLocation()
-        local btn = b or 0
-        VIM:SendMouseButtonEvent(loc.X, loc.Y, btn, true, game, 0)
-        task.wait(0.01)
-        VIM:SendMouseButtonEvent(loc.X, loc.Y, btn, false, game, 0)
-    end)
-end
-
-local function clickAtTarget(b)
-    pcall(function()
-        local mouseLoc = UIS:GetMouseLocation()
-        local targetX = (AssistSettings.Enabled and currentBestTarget) and currentBestTarget.X or mouseLoc.X
-        local targetY = (AssistSettings.Enabled and currentBestTarget) and currentBestTarget.Y or mouseLoc.Y
-        local btn = b or 0
-
-        VIM:SendMouseButtonEvent(targetX, targetY, btn, true, game, 0)
-        task.wait(0.01)
-        VIM:SendMouseButtonEvent(targetX, targetY, btn, false, game, 0)
-    end)
-end
-
-local function pressKey(k)
-    pcall(function()
-        VIM:SendKeyEvent(true, k, false, game)
-        task.wait(0.01)
-        VIM:SendKeyEvent(false, k, false, game)
-    end)
-end
-
--- Thread management to prevent overlapping glitches
-local runningMacroThread = nil
-
-local function executeSafeMacro(macroFunc)
-    if runningMacroThread then
-        task.cancel(runningMacroThread)
-        runningMacroThread = nil
-    end
-    runningMacroThread = task.spawn(function()
-        macroFunc()
-        runningMacroThread = nil
-    end)
-end
-
-local function runSnowball()
-    pressKey(Enum.KeyCode.Seven)
-    clickAtTarget(0)
-    task.wait(0.02)
-    pressKey(Enum.KeyCode.Nine)
-    clickAtTarget(0)
-    task.wait(0.02)
-    pressKey(Enum.KeyCode.Six)
-    clickAtTarget(0)
-end
+Players.PlayerRemoving:Connect(function(plr) lastPositions[plr] = nil end)
 
 -- ==========================================
--- EXACT 1:1 XML MAPPED BOARD COMBO MACRO
+-- TIMESTAMP MACRO ENGINE
+-- Every event has an absolute time (ms) from trigger. Each Heartbeat fires
+-- all events that are due, so delays never accumulate and several events
+-- can land in one frame. A down and its matching up never share a frame.
 -- ==========================================
-local function runBoard()
-    -- 1 Key Down / Up
-    pressKey(Enum.KeyCode.One)
-    task.wait(0.015)
+local Engine = { run = nil, conn = nil }
 
-    -- First Left Click Down/Up (0.012s delay)
+local function sendEvent(e, run)
     pcall(function()
-        local l = UIS:GetMouseLocation()
-        VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
-        task.wait(0.012)
-        VIM:SendMouseButtonEvent(l.X, l.Y, 0, false, game, 0)
-    end)
-    task.wait(0.01)
-
-    -- Second Left Click Down/Up (0.012s delay)
-    pcall(function()
-        local l = UIS:GetMouseLocation()
-        VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
-        task.wait(0.012)
-        VIM:SendMouseButtonEvent(l.X, l.Y, 0, false, game, 0)
-    end)
-    task.wait(0.01)
-
-    -- 4 Key Down / Up
-    pressKey(Enum.KeyCode.Four)
-    task.wait(0.015)
-
-    -- Mouse Button 5 / XButton2 (Button Index 4)
-    pcall(function()
-        local l = UIS:GetMouseLocation()
-        VIM:SendMouseButtonEvent(l.X, l.Y, 4, true, game, 0)
-        task.wait(0.015)
-        VIM:SendMouseButtonEvent(l.X, l.Y, 4, false, game, 0)
-    end)
-    task.wait(0.02)
-
-    -- 8 Key Down / Up
-    pressKey(Enum.KeyCode.Eight)
-    task.wait(0.015)
-
-    -- Left Click Down/Up (0.02s delay)
-    pcall(function()
-        local l = UIS:GetMouseLocation()
-        VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
-        task.wait(0.02)
-        VIM:SendMouseButtonEvent(l.X, l.Y, 0, false, game, 0)
-    end)
-    task.wait(0.01)
-
-    -- Left Click Down/Up (0.01s delay)
-    pcall(function()
-        local l = UIS:GetMouseLocation()
-        VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
-        task.wait(0.01)
-        VIM:SendMouseButtonEvent(l.X, l.Y, 0, false, game, 0)
-    end)
-    task.wait(0.01)
-
-    -- 0 Key Down / Up
-    pressKey(Enum.KeyCode.Zero)
-    task.wait(0.015)
-
-    -- Left Click Down/Up (0.01s delay)
-    pcall(function()
-        local l = UIS:GetMouseLocation()
-        VIM:SendMouseButtonEvent(l.X, l.Y, 0, true, game, 0)
-        task.wait(0.01)
-        VIM:SendMouseButtonEvent(l.X, l.Y, 0, false, game, 0)
-    end)
-    task.wait(0.01)
-
-    -- 6 Key Down / Up
-    pressKey(Enum.KeyCode.Six)
-    task.wait(0.015)
-
-    -- Final Left Click Down/Up
-    clickCursor(0)
-end
-
-local function runRpg()
-    pressKey(Enum.KeyCode.Five)
-    task.wait(0.1)
-    clickCursor(0)
-    task.wait(0.02)
-    pressKey(Enum.KeyCode.R)
-    pressKey(Enum.KeyCode.Six)
-    clickCursor(0)
-end
-
-print("Exotica: Master Suite Initialized Successfully!")
-
--- UI Interface Initialization
-local core = gethui and gethui() or game:GetService("CoreGui")
-pcall(function()
-    local sg = Instance.new("ScreenGui")
-    sg.Name = "ExoticaMasterSuite"
-    sg.ResetOnSpawn = false
-    sg.Parent = core
-
-    local toggleBtn = Instance.new("TextButton", sg)
-    toggleBtn.Size = UDim2.new(0, 45, 0, 45)
-    toggleBtn.Position = UDim2.new(0.02, 0, 0.28, 0)
-    toggleBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 28)
-    toggleBtn.Font = Enum.Font.GothamBold
-    toggleBtn.Text = "⚙️"
-    toggleBtn.TextColor3 = Color3.fromRGB(0, 220, 255)
-    toggleBtn.TextSize, toggleBtn.AutoButtonColor = 18, false
-    Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(1, 0)
-    local tStroke = Instance.new("UIStroke", toggleBtn)
-    tStroke.Color = Color3.fromRGB(0, 200, 255)
-    tStroke.Thickness = 2
-
-    local tDragging, tDragStart, tStartPos, tMoved = false, nil, nil, false
-    toggleBtn.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            tDragging = true
-            tDragStart = input.Position
-            tStartPos = toggleBtn.Position
-            tMoved = false
-            local conn
-            conn = input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    tDragging = false
-                    if conn then conn:Disconnect() end
+        if e.kind == "key" then
+            VIM:SendKeyEvent(e.down, e.code, false, game)
+        else
+            if e.down then
+                local x, y
+                if e.aim and AssistSettings.Enabled and currentBestTarget then
+                    x, y = currentBestTarget.X, currentBestTarget.Y
+                else
+                    local l = UIS:GetMouseLocation()
+                    x, y = l.X, l.Y
                 end
-            end)
+                run.pos[e.id] = { x, y }
+            end
+            local pos = run.pos[e.id]
+            VIM:SendMouseButtonEvent(pos[1], pos[2], e.code, e.down, game, 0)
         end
     end)
+    run.held[e.id] = e.down and e or nil
+end
 
-    UIS.InputChanged:Connect(function(input)
-        if tDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            local delta = input.Position - tDragStart
-            if delta.Magnitude > 5 then tMoved = true end
-            toggleBtn.Position = UDim2.new(tStartPos.X.Scale, tStartPos.X.Offset + delta.X, tStartPos.Y.Scale, tStartPos.Y.Offset + delta.Y)
-        end
-    end)
+local function releaseHeld(run)
+    for id, e in pairs(run.held) do
+        sendEvent({ kind = e.kind, code = e.code, down = false, id = id }, run)
+    end
+    run.held = {}
+end
 
-    local f = Instance.new("Frame", sg)
-    f.Size = UDim2.new(0, 260, 0, 380)
-    f.Position = UDim2.new(0.02, 55, 0.28, 0)
-    f.BackgroundColor3 = Color3.fromRGB(15, 15, 22)
-    f.BackgroundTransparency = 0.08
-    f.BorderSizePixel = 0
-    f.Active = true
-    Instance.new("UICorner", f).CornerRadius = UDim.new(0, 16)
+local function stopEngine()
+    if Engine.conn then
+        Engine.conn:Disconnect()
+        Engine.conn = nil
+    end
+    local run = Engine.run
+    Engine.run = nil
+    if run then releaseHeld(run) end
+end
 
-    local fStroke = Instance.new("UIStroke", f)
-    fStroke.Color = Color3.fromRGB(0, 200, 255)
-    fStroke.Transparency = 0.4
-    fStroke.Thickness = 2
+local function stepEngine()
+    local run = Engine.run
+    if not run then return end
 
-    local title = Instance.new("TextButton", f)
-    title.Size = UDim2.new(1, 0, 0, 40)
-    title.BackgroundTransparency = 1
-    title.Font = Enum.Font.GothamBold
-    title.Text = "EXOTICA // MACROS"
-    title.TextColor3 = Color3.fromRGB(255, 255, 255)
-    title.TextSize = 14
-    title.AutoButtonColor = false
+    local now = (clock() - run.t0) * 1000
+    local downThisFrame = {}
+    local events = run.events
 
-    local dragging, dragStart, startPos
-    title.InputBegan:Connect(function(input)
+    while run.i <= #events do
+        local e = events[run.i]
+        if e.t > now then break end
+        if not e.down and downThisFrame[e.id] then break end -- push up to next frame
+        sendEvent(e, run)
+        if e.down then downThisFrame[e.id] = true end
+        run.i = run.i + 1
+    end
+
+    if run.i > #events then
+        stopEngine()
+    end
+end
+
+local function startSequence(events)
+    stopEngine() -- retrigger = clean restart, held inputs released first
+    Engine.run = { events = events, i = 1, t0 = clock(), held = {}, pos = {} }
+    Engine.conn = RunService.Heartbeat:Connect(stepEngine)
+    stepEngine() -- fire first event immediately, zero added latency
+end
+
+-- Sequence builder: each step is down at cursor, up at cursor+hold,
+-- next step at cursor+hold+gap (times in ms).
+local function newSeq()
+    local s = { events = {}, t = 0, n = 0 }
+    local function add(kind, code, hold, gap, aim)
+        s.n = s.n + 1
+        table.insert(s.events, { t = s.t, kind = kind, code = code, down = true, id = s.n, aim = aim })
+        table.insert(s.events, { t = s.t + hold, kind = kind, code = code, down = false, id = s.n })
+        s.t = s.t + hold + (gap or 0)
+        return s
+    end
+    function s.key(code, hold, gap) return add("key", code, hold, gap) end
+    function s.click(hold, gap, aim) return add("mouse", 0, hold, gap, aim) end
+    function s.mouse(btn, hold, gap) return add("mouse", btn, hold, gap) end
+    return s
+end
+
+local KC = Enum.KeyCode
+
+-- Board combo: 1:1 with the AHK timeline (total 209ms)
+local BoardSeq = newSeq()
+    .key(KC.One, 15)
+    .click(12)
+    .click(12)
+    .key(KC.Four, 15)
+    .mouse(4, 15, 20) -- XButton2 (may be ignored by VirtualInputManager)
+    .key(KC.Eight, 15)
+    .click(20)
+    .click(10, 10)
+    .key(KC.Zero, 15)
+    .click(10, 10)
+    .key(KC.Six, 15)
+    .click(15)
+    .events
+
+local SnowballSeq = newSeq()
+    .key(KC.Seven, 10)
+    .click(10, 20, true)
+    .key(KC.Nine, 10)
+    .click(10, 20, true)
+    .key(KC.Six, 10)
+    .click(10, 0, true)
+    .events
+
+local RpgSeq = newSeq()
+    .key(KC.Five, 10, 100)
+    .click(10, 20)
+    .key(KC.R, 10)
+    .key(KC.Six, 10)
+    .click(10)
+    .events
+
+local Macros = {
+    Snowball = function() startSequence(SnowballSeq) end,
+    Board    = function() startSequence(BoardSeq) end,
+    RPG      = function() startSequence(RpgSeq) end,
+}
+
+-- ==========================================
+-- UI
+-- ==========================================
+local listeningMacro = nil
+local core = (gethui and gethui()) or game:GetService("CoreGui")
+
+local COLORS = {
+    panel = Color3.fromRGB(15, 15, 22),
+    row = Color3.fromRGB(24, 24, 34),
+    btn = Color3.fromRGB(35, 35, 50),
+    accent = Color3.fromRGB(0, 220, 255),
+}
+
+local function corner(obj, r)
+    Instance.new("UICorner", obj).CornerRadius = UDim.new(0, r)
+end
+
+local function makeDraggable(handle, target)
+    local state = { moved = false }
+    local dragging, dragStart, startPos = false, nil, nil
+
+    handle.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            dragStart = input.Position
-            startPos = f.Position
+            dragging, state.moved = true, false
+            dragStart, startPos = input.Position, target.Position
             local conn
             conn = input.Changed:Connect(function()
                 if input.UserInputState == Enum.UserInputState.End then
@@ -340,9 +270,59 @@ pcall(function()
     UIS.InputChanged:Connect(function(input)
         if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
             local delta = input.Position - dragStart
-            f.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+            if delta.Magnitude > 5 then state.moved = true end
+            target.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
         end
     end)
+
+    return state
+end
+
+pcall(function()
+    local sg = Instance.new("ScreenGui")
+    sg.Name = "ExoticaMasterSuite"
+    sg.ResetOnSpawn = false
+    sg.Parent = core
+
+    -- Toggle button
+    local toggleBtn = Instance.new("TextButton", sg)
+    toggleBtn.Size = UDim2.new(0, 45, 0, 45)
+    toggleBtn.Position = UDim2.new(0.02, 0, 0.28, 0)
+    toggleBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 28)
+    toggleBtn.Font = Enum.Font.GothamBold
+    toggleBtn.Text = "⚙️"
+    toggleBtn.TextColor3 = COLORS.accent
+    toggleBtn.TextSize = 18
+    toggleBtn.AutoButtonColor = false
+    corner(toggleBtn, 22)
+    local tStroke = Instance.new("UIStroke", toggleBtn)
+    tStroke.Color = Color3.fromRGB(0, 200, 255)
+    tStroke.Thickness = 2
+    local toggleState = makeDraggable(toggleBtn, toggleBtn)
+
+    -- Main frame
+    local f = Instance.new("Frame", sg)
+    f.Size = UDim2.new(0, 260, 0, 350)
+    f.Position = UDim2.new(0.02, 55, 0.28, 0)
+    f.BackgroundColor3 = COLORS.panel
+    f.BackgroundTransparency = 0.08
+    f.BorderSizePixel = 0
+    f.Active = true
+    corner(f, 16)
+    local fStroke = Instance.new("UIStroke", f)
+    fStroke.Color = Color3.fromRGB(0, 200, 255)
+    fStroke.Transparency = 0.4
+    fStroke.Thickness = 2
+
+    local title = Instance.new("TextButton", f)
+    title.Size = UDim2.new(1, 0, 0, 40)
+    title.BackgroundTransparency = 1
+    title.Font = Enum.Font.GothamBold
+    title.Text = "EXOTICA // MACROS"
+    title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    title.TextSize = 14
+    title.AutoButtonColor = false
+    makeDraggable(title, f)
 
     local subtitle = Instance.new("TextLabel", f)
     subtitle.Size = UDim2.new(1, 0, 0, 20)
@@ -357,44 +337,49 @@ pcall(function()
     container.Size = UDim2.new(1, -20, 1, -60)
     container.Position = UDim2.new(0, 10, 0, 52)
     container.BackgroundTransparency = 1
-
     local layout = Instance.new("UIListLayout", container)
     layout.SortOrder = Enum.SortOrder.LayoutOrder
     layout.Padding = UDim.new(0, 8)
 
-    local keyButtonRefs = {}
-
-    local function createMacroRow(name, data, executeFunc)
+    local function makeRow(labelText, btnText, btnColor, btnTextColor, btnTextSize)
         local row = Instance.new("Frame", container)
         row.Size = UDim2.new(1, 0, 0, 40)
-        row.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
+        row.BackgroundColor3 = COLORS.row
         row.BackgroundTransparency = 0.2
         row.BorderSizePixel = 0
-        Instance.new("UICorner", row).CornerRadius = UDim.new(0, 10)
+        corner(row, 10)
 
-        local execBtn = Instance.new("TextButton", row)
-        execBtn.Size = UDim2.new(0.55, -5, 1, 0)
-        execBtn.BackgroundTransparency = 1
-        execBtn.Font = Enum.Font.GothamBold
-        execBtn.Text = "  " .. data.Label
-        execBtn.TextColor3 = Color3.fromRGB(240, 240, 240)
-        execBtn.TextSize, execBtn.TextXAlignment = 12, Enum.TextXAlignment.Left
-        execBtn.AutoButtonColor = false
-        execBtn.Activated:Connect(executeFunc)
+        local label = Instance.new("TextButton", row)
+        label.Size = UDim2.new(0.55, -5, 1, 0)
+        label.BackgroundTransparency = 1
+        label.Font = Enum.Font.GothamBold
+        label.Text = "  " .. labelText
+        label.TextColor3 = Color3.fromRGB(240, 240, 240)
+        label.TextSize = 12
+        label.TextXAlignment = Enum.TextXAlignment.Left
+        label.AutoButtonColor = false
 
-        local bindBtn = Instance.new("TextButton", row)
-        bindBtn.Size = UDim2.new(0.4, 0, 0.75, 0)
-        bindBtn.Position = UDim2.new(0.58, 0, 0.125, 0)
-        bindBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
-        bindBtn.Font = Enum.Font.GothamBold
-        bindBtn.Text = tostring(data.Key.Name)
-        bindBtn.TextColor3 = Color3.fromRGB(0, 220, 255)
-        bindBtn.TextSize = 11
-        bindBtn.AutoButtonColor = false
-        Instance.new("UICorner", bindBtn).CornerRadius = UDim.new(0, 8)
-        
-        keyButtonRefs[name] = bindBtn
+        local btn = Instance.new("TextButton", row)
+        btn.Size = UDim2.new(0.4, 0, 0.75, 0)
+        btn.Position = UDim2.new(0.58, 0, 0.125, 0)
+        btn.BackgroundColor3 = btnColor or COLORS.btn
+        btn.Font = Enum.Font.GothamBold
+        btn.Text = btnText
+        btn.TextColor3 = btnTextColor or COLORS.accent
+        btn.TextSize = btnTextSize or 11
+        btn.TextTruncate = Enum.TextTruncate.AtEnd
+        btn.AutoButtonColor = false
+        corner(btn, 8)
 
+        return label, btn
+    end
+
+    -- Macro rows
+    local keyButtons = {}
+    for _, name in ipairs({ "Snowball", "Board", "RPG" }) do
+        local label, bindBtn = makeRow(Config[name].Label, Config[name].Key.Name)
+        keyButtons[name] = bindBtn
+        label.Activated:Connect(Macros[name])
         bindBtn.Activated:Connect(function()
             listeningMacro = name
             bindBtn.Text = "[ Press Key... ]"
@@ -402,179 +387,64 @@ pcall(function()
         end)
     end
 
-    createMacroRow("Snowball", Config.Snowball, function() executeSafeMacro(runSnowball) end)
-    createMacroRow("Board", Config.Board, function() executeSafeMacro(runBoard) end)
-    createMacroRow("RPG", Config.RPG, function() executeSafeMacro(runRpg) end)
-
-    -- Assist Toggle Row (Defaults to OFF)
-    local aimRow = Instance.new("Frame", container)
-    aimRow.Size = UDim2.new(1, 0, 0, 40)
-    aimRow.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
-    aimRow.BackgroundTransparency = 0.2
-    aimRow.BorderSizePixel = 0
-    Instance.new("UICorner", aimRow).CornerRadius = UDim.new(0, 10)
-
-    local aimLabel = Instance.new("TextButton", aimRow)
-    aimLabel.Size = UDim2.new(0.55, -5, 1, 0)
-    aimLabel.BackgroundTransparency = 1
-    aimLabel.Font = Enum.Font.GothamBold
-    aimLabel.Text = "  🎯 Assist"
-    aimLabel.TextColor3 = Color3.fromRGB(240, 240, 240)
-    aimLabel.TextSize, aimLabel.TextXAlignment = 12, Enum.TextXAlignment.Left
-    aimLabel.AutoButtonColor = false
-
-    local aimToggleBtn = Instance.new("TextButton", aimRow)
-    aimToggleBtn.Size = UDim2.new(0.4, 0, 0.75, 0)
-    aimToggleBtn.Position = UDim2.new(0.58, 0, 0.125, 0)
-    aimToggleBtn.BackgroundColor3 = Color3.fromRGB(150, 50, 50) -- Default OFF
-    aimToggleBtn.Font = Enum.Font.GothamBold
-    aimToggleBtn.Text = "OFF"
-    aimToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    aimToggleBtn.TextSize = 11
-    aimToggleBtn.AutoButtonColor = false
-    Instance.new("UICorner", aimToggleBtn).CornerRadius = UDim.new(0, 8)
-
-    aimToggleBtn.Activated:Connect(function()
+    -- Assist toggle
+    local _, aimBtn = makeRow("🎯 Assist", "OFF", Color3.fromRGB(150, 50, 50), Color3.fromRGB(255, 255, 255))
+    aimBtn.Activated:Connect(function()
         AssistSettings.Enabled = not AssistSettings.Enabled
-        if AssistSettings.Enabled then
-            aimToggleBtn.Text = "ON"
-            aimToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 100)
-        else
-            aimToggleBtn.Text = "OFF"
-            aimToggleBtn.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
-        end
+        aimBtn.Text = AssistSettings.Enabled and "ON" or "OFF"
+        aimBtn.BackgroundColor3 = AssistSettings.Enabled and Color3.fromRGB(0, 150, 100) or Color3.fromRGB(150, 50, 50)
     end)
 
-    -- Target Selector Row
-    local targetRow = Instance.new("Frame", container)
-    targetRow.Size = UDim2.new(1, 0, 0, 40)
-    targetRow.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
-    targetRow.BackgroundTransparency = 0.2
-    Instance.new("UICorner", targetRow).CornerRadius = UDim.new(0, 10)
-
-    local targetLabel = Instance.new("TextButton", targetRow)
-    targetLabel.Size = UDim2.new(0.55, -5, 1, 0)
-    targetLabel.BackgroundTransparency = 1
-    targetLabel.Font = Enum.Font.GothamBold
-    targetLabel.Text = "  👤 Target"
-    targetLabel.TextColor3 = Color3.fromRGB(240, 240, 240)
-    targetLabel.TextSize, targetLabel.TextXAlignment = 12, Enum.TextXAlignment.Left
-    targetLabel.AutoButtonColor = false
-
-    local targetBtn = Instance.new("TextButton", targetRow)
-    targetBtn.Size = UDim2.new(0.4, 0, 0.75, 0)
-    targetBtn.Position = UDim2.new(0.58, 0, 0.125, 0)
-    targetBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
-    targetBtn.Font = Enum.Font.GothamBold
-    targetBtn.Text = "Auto (Close)"
-    targetBtn.TextColor3 = Color3.fromRGB(0, 220, 255)
-    targetBtn.TextSize = 10
-    targetBtn.AutoButtonColor = false
-    Instance.new("UICorner", targetBtn).CornerRadius = UDim.new(0, 8)
-
+    -- Target selector (cycles Auto -> each player -> Auto)
+    local _, targetBtn = makeRow("👤 Target", "Auto (Closest)", nil, nil, 10)
     targetBtn.Activated:Connect(function()
-        if AssistSettings.TargetPlayer == "Auto (Closest)" then
-            for _, plr in ipairs(Players:GetPlayers()) do
-                if plr ~= p then
-                    AssistSettings.TargetPlayer = plr.Name
-                    targetBtn.Text = plr.Name
-                    break
-                end
-            end
-        else
-            AssistSettings.TargetPlayer = "Auto (Closest)"
-            targetBtn.Text = "Auto (Close)"
+        local names = { "Auto (Closest)" }
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= p then table.insert(names, plr.Name) end
         end
+        local idx = table.find(names, AssistSettings.TargetPlayer) or 0
+        AssistSettings.TargetPlayer = names[(idx % #names) + 1]
+        targetBtn.Text = AssistSettings.TargetPlayer
     end)
 
-    -- Sensitivity / Range Row
-    local fovRow = Instance.new("Frame", container)
-    fovRow.Size = UDim2.new(1, 0, 0, 40)
-    fovRow.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
-    fovRow.BackgroundTransparency = 0.2
-    fovRow.BorderSizePixel = 0
-    Instance.new("UICorner", fovRow).CornerRadius = UDim.new(0, 10)
-
-    local fovLabel = Instance.new("TextButton", fovRow)
-    fovLabel.Size = UDim2.new(0.55, -5, 1, 0)
-    fovLabel.BackgroundTransparency = 1
-    fovLabel.Font = Enum.Font.GothamBold
-    fovLabel.Text = "  🔍 Sensitivity"
-    fovLabel.TextColor3 = Color3.fromRGB(240, 240, 240)
-    fovLabel.TextSize, fovLabel.TextXAlignment = 12, Enum.TextXAlignment.Left
-    fovLabel.AutoButtonColor = false
-
-    local fovBtn = Instance.new("TextButton", fovRow)
-    fovBtn.Size = UDim2.new(0.4, 0, 0.75, 0)
-    fovBtn.Position = UDim2.new(0.58, 0, 0.125, 0)
-    fovBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
-    fovBtn.Font = Enum.Font.GothamBold
-    fovBtn.Text = "400px"
-    fovBtn.TextColor3 = Color3.fromRGB(0, 220, 255)
-    fovBtn.TextSize = 11
-    fovBtn.AutoButtonColor = false
-    Instance.new("UICorner", fovBtn).CornerRadius = UDim.new(0, 8)
-
-    local fovIndex = 3
+    -- Sensitivity / FOV (cycles presets)
+    local _, fovBtn = makeRow("🔍 Sensitivity", AssistSettings.Effectiveness .. "px")
+    local fovIndex = table.find(AssistSettings.RadiusPresets, AssistSettings.Effectiveness) or 3
     fovBtn.Activated:Connect(function()
-        fovIndex = fovIndex + 1
-        if fovIndex > #AssistSettings.RadiusPresets then
-            fovIndex = 1
-        end
+        fovIndex = (fovIndex % #AssistSettings.RadiusPresets) + 1
         AssistSettings.Effectiveness = AssistSettings.RadiusPresets[fovIndex]
-        if AssistSettings.Effectiveness > 5000 then
-            fovBtn.Text = "Unlimited"
-        else
-            fovBtn.Text = AssistSettings.Effectiveness .. "px"
-        end
+        fovBtn.Text = AssistSettings.Effectiveness > 5000 and "Unlimited" or (AssistSettings.Effectiveness .. "px")
     end)
 
+    -- Show / hide
+    toggleBtn.Activated:Connect(function()
+        if toggleState.moved then return end
+        f.Visible = not f.Visible
+    end)
+
+    -- Input handling
     UIS.InputBegan:Connect(function(input, gpe)
         local k = input.KeyCode
-        if k == Enum.KeyCode.Unknown then return end
+        if k == KC.Unknown then return end
+        if gpe and input.UserInputType == Enum.UserInputType.Keyboard then return end
 
         if listeningMacro then
             Config[listeningMacro].Key = k
-            keyButtonRefs[listeningMacro].Text = tostring(k.Name)
-            keyButtonRefs[listeningMacro].TextColor3 = Color3.fromRGB(0, 220, 255)
+            keyButtons[listeningMacro].Text = k.Name
+            keyButtons[listeningMacro].TextColor3 = COLORS.accent
             listeningMacro = nil
             saveKeybinds()
-        else
-            if k == Config.Snowball.Key then
-                executeSafeMacro(runSnowball)
-            elseif k == Config.Board.Key then
-                executeSafeMacro(runBoard)
-            elseif k == Config.RPG.Key then
-                executeSafeMacro(runRpg)
-            end
+            return
         end
-    end)
 
-    local visible = true
-    toggleBtn.Activated:Connect(function()
-        if tMoved then return end
-        visible = not visible
-        local targetTrans = visible and 0.08 or 1
-        local textTrans = visible and 0 or 1
-        local info = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-
-        TweenService:Create(f, info, {BackgroundTransparency = targetTrans}):Play()
-        TweenService:Create(fStroke, info, {Transparency = visible and 0.4 or 1}):Play()
-        TweenService:Create(title, info, {TextTransparency = textTrans}):Play()
-        TweenService:Create(subtitle, info, {TextTransparency = textTrans}):Play()
-
-        for _, row in ipairs(container:GetChildren()) do
-            if row:IsA("Frame") then
-                TweenService:Create(row, info, {BackgroundTransparency = visible and 0.2 or 1}):Play()
-                for _, child in ipairs(row:GetChildren()) do
-                    if child:IsA("TextButton") then
-                        TweenService:Create(child, info, {TextTransparency = textTrans}):Play()
-                        if child.BackgroundColor3 ~= Color3.fromRGB(24, 24, 34) and child ~= row then
-                            TweenService:Create(child, info, {BackgroundTransparency = visible and 0 or 1}):Play()
-                        end
-                    end
-                end
+        for name, info in pairs(Config) do
+            -- Thumbstick1 is an axis and never fires InputBegan; a stick click is ButtonL3
+            if k == info.Key or (info.Key == KC.Thumbstick1 and k == KC.ButtonL3) then
+                Macros[name]()
+                break
             end
         end
     end)
 end)
+
+print("Exotica: Master Suite Initialized Successfully!")
