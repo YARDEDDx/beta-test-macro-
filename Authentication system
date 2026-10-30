@@ -1,6 +1,8 @@
 local HttpService = game:GetService("HttpService")
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 local player = Players.LocalPlayer
 
 local name = "Exotica Macros"
@@ -90,6 +92,7 @@ task.spawn(function()
         frame.Position = UDim2.new(0.5, -160, 0.5, -80)
         frame.BackgroundColor3 = Color3.fromRGB(18, 18, 26)
         frame.BorderSizePixel = 0
+        frame.BackgroundTransparency = 1 -- Start fully transparent for fade-in
 
         local uiCorner = Instance.new("UICorner", frame)
         uiCorner.CornerRadius = UDim.new(0, 8)
@@ -101,6 +104,7 @@ task.spawn(function()
         title.Text = "Exotica Macros - Login"
         title.TextColor3 = Color3.fromRGB(255, 255, 255)
         title.TextSize = 16
+        title.TextTransparency = 1
 
         local textBox = Instance.new("TextBox", frame)
         textBox.Size = UDim2.new(0.85, 0, 0, 40)
@@ -111,6 +115,8 @@ task.spawn(function()
         textBox.TextColor3 = Color3.fromRGB(255, 255, 255)
         textBox.Font = Enum.Font.Gotham
         textBox.TextSize = 14
+        textBox.BackgroundTransparency = 1
+        textBox.TextTransparency = 1
 
         local boxCorner = Instance.new("UICorner", textBox)
         boxCorner.CornerRadius = UDim.new(0, 6)
@@ -122,30 +128,19 @@ task.spawn(function()
         submitBtn.Font = Enum.Font.GothamBold
         submitBtn.Text = "Verify Key"
         submitBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        submitBtn.TextSize = 14 -- Fixed typo here
+        submitBtn.TextSize = 14
+        submitBtn.BackgroundTransparency = 1
+        submitBtn.TextTransparency = 1
 
         local btnCorner = Instance.new("UICorner", submitBtn)
         btnCorner.CornerRadius = UDim.new(0, 6)
 
-        submitBtn.Activated:Connect(function()
-            local enteredKey = textBox.Text
-            if enteredKey == "" then
-                textBox.PlaceholderText = "Please enter a key!"
-                return
-            end
+        -- Fade In Animation
+        local tweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        TweenService:Create(frame, tweenInfo, {BackgroundTransparency = 0}):Play()
+        TweenService:Create(title, tweenInfo, {TextTransparency = 0}):Play()
+        TweenService:Create(textBox, tweenInfo, {BackgroundTransparency = 0, TextTransparency = 0}):Play()
+        TweenService:Create(submitBtn, tweenInfo, {BackgroundTransparency = 0, TextTransparency = 0}):Play()
 
-            submitBtn.Text = "Verifying..."
-            local success, msg = validateKey(enteredKey)
-            if success then
-                submitBtn.Text = "Success! Loading..."
-                task.wait(1)
-                screenGui:Destroy()
-                executeMasterScript()
-            else
-                submitBtn.Text = "Verify Key"
-                textBox.Text = ""
-                textBox.PlaceholderText = msg
-            end
-        end)
-    end)
-end)
+        -- Draggable UI Logic
+        local dragging,
