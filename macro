@@ -1,5 +1,9 @@
--- Hide the global check from string/variable obfuscators
-if not rawget(_G, "ExoticaAuthorizedSession") then
+-- Dynamically build the authorization key so string obfuscators never touch it
+local part1 = string.char(69, 120, 111, 116, 105, 99, 97) -- "Exotica"
+local part2 = string.char(65, 117, 116, 104, 111, 114, 105, 122, 101, 100, 83, 101, 115, 115, 105, 111, 110) -- "AuthorizedSession"
+local sessionKey = part1 .. part2
+
+if not rawget(_G, sessionKey) then
     warn("Unauthorized execution attempt detected!")
     return
 end
