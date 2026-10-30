@@ -10,12 +10,12 @@ local name = "Exotica Macros"
 local ownerid = "kFHLyWbpTo"
 local version = "1.0"
 
--- Global Session Variable
+-- LOCAL SAVED KEY SETTINGS
+local saveFileName = "ExoticaKey.txt"
 local sessionid = nil
 
--- 1. Perform KeyAuth Initialization
+-- 1. Helper Function: Perform KeyAuth Init
 local function initKeyAuth()
-    local hwid = player.UserId .. "_" .. tostring(game.JobId ~= "" and game.JobId or "Studio")
     local initUrl = string.format("https://keyauth.win/api/1.2/?type=init&name=%s&ownerid=%s&ver=%s", name, ownerid, version)
     
     local success, response = pcall(function()
@@ -35,82 +35,39 @@ local function initKeyAuth()
     return false
 end
 
--- 2. Create Login UI for Delta
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "ExoticaKeyLoader"
-screenGui.ResetOnSpawn = false
-screenGui.Parent = (gethui and gethui()) or CoreGui
+-- 2. Helper Function: Fetch & Execute Master Script
+local function executeMasterScript()
+    print("Key verified! Loading Exotica Master Suite...")
+    local mainScriptUrl = "https://raw.githubusercontent.com/YARDEDDx/beta-test-macro-/refs/heads/main/macro?nocache=" .. tostring(tick())
+    
+    local fetchSuccess, result = pcall(function()
+        return game:HttpGet(mainScriptUrl)
+    end)
 
-local frame = Instance.new("Frame", screenGui)
-frame.Size = UDim2.new(0, 320, 0, 160)
-frame.Position = UDim2.new(0.5, -160, 0.5, -80)
-frame.BackgroundColor3 = Color3.fromRGB(18, 18, 26)
-frame.BorderSizePixel = 0
-
-local uiCorner = Instance.new("UICorner", frame)
-uiCorner.CornerRadius = UDim.new(0, 8)
-
-local title = Instance.new("TextLabel", frame)
-title.Size = UDim2.new(1, 0, 0, 40)
-title.BackgroundTransparency = 1
-title.Font = Enum.Font.GothamBold
-title.Text = "Exotica Macros - Login"
-title.TextColor3 = Color3.fromRGB(255, 255, 255)
-title.TextSize = 16
-
-local textBox = Instance.new("TextBox", frame)
-textBox.Size = UDim2.new(0.85, 0, 0, 40)
-textBox.Position = UDim2.new(0.075, 0, 0.35, 0)
-textBox.BackgroundColor3 = Color3.fromRGB(28, 28, 38)
-textBox.PlaceholderText = "Enter License Key..."
-textBox.Text = ""
-textBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-textBox.Font = Enum.Font.Gotham
-textBox.TextSize = 14
-
-local boxCorner = Instance.new("UICorner", textBox)
-boxCorner.CornerRadius = UDim.new(0, 6)
-
-local submitBtn = Instance.new("TextButton", frame)
-submitBtn.Size = UDim2.new(0.85, 0, 0, 40)
-submitBtn.Position = UDim2.new(0.075, 0, 0.65, 0)
-submitBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 100)
-submitBtn.Font = Enum.Font.GothamBold
-submitBtn.Text = "Verify Key"
-submitBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-submitBtn.TextSize = 14
-
-local btnCorner = Instance.new("UICorner", submitBtn)
-btnCorner.CornerRadius = UDim.new(0, 6)
-
--- Run Init in Background
-task.spawn(function()
-    initKeyAuth()
-end)
-
--- 3. Handle Verification Logic & HWID Locking
-submitBtn.Activated:Connect(function()
-    local enteredKey = textBox.Text
-    if enteredKey == "" then
-        textBox.PlaceholderText = "Please enter a key!"
+    if not fetchSuccess or not result or result == "" then
+        warn("Failed to fetch master script from GitHub!")
         return
     end
 
-    submitBtn.Text = "Verifying..."
-    
+    local fn, err = loadstring(result)
+    if not fn then
+        warn("Compile Error: " .. tostring(err))
+        return
+    end
+
+    fn()
+end
+
+-- 3. Helper Function: Validate Key with KeyAuth
+local function validateKey(keyToTest)
     if not sessionid then
-        local initialized = initKeyAuth()
-        if not initialized then
-            submitBtn.Text = "Verify Key"
-            textBox.Text = ""
-            textBox.PlaceholderText = "Session init failed! Retry."
-            return
-        end
+        local inited = initKeyAuth()
+        if not inited then return false, "Init Failed" end
     end
 
     local hwid = player.UserId .. "_" .. tostring(game.JobId ~= "" and game.JobId or "Studio")
-    local url = string.format("https://keyauth.win/api/1.2/?type=license&key=%s&hwid=%s&sessionid=%s&name=%s&ownerid=%s", enteredKey, hwid, sessionid, name, ownerid)
-    
+    local url = string.format("https://keyauth.win/api/1.2/?type=license&key=%s&hwid=%s&sessionid=%s&name=%s&ownerid=%s", keyToTest, hwid, sessionid, name, ownerid)
+
     local success, response = pcall(function()
         return request({
             Url = url,
@@ -121,36 +78,116 @@ submitBtn.Activated:Connect(function()
     if success and response and response.StatusCode == 200 then
         local data = HttpService:JSONDecode(response.Body)
         if data.success then
+            -- Save key locally upon successful verification
+            if writefile then
+                pcall(function()
+                    writefile(saveFileName, keyToTest)
+                end)
+            end
+            return true, "Success"
+        else
+            -- Delete invalid/expired key from local storage
+            if isfile and isfile(saveFileName) and delfile then
+                pcall(function() delfile(saveFileName) end)
+            end
+            return false, data.message or "Invalid Key"
+        end
+    end
+    return false, "Connection Error"
+end
+
+-- ==========================================
+-- AUTO-LOGIN CHECK (MEMORY SYSTEM)
+-- ==========================================
+task.spawn(function()
+    if readfile and isfile and isfile(saveFileName) then
+        local savedKey = readfile(saveFileName)
+        if savedKey and savedKey ~= "" then
+            print("Saved key found. Attempting auto-login...")
+            local isValid, msg = validateKey(savedKey)
+            if isValid then
+                executeMasterScript()
+                return -- Exit without creating UI
+            else
+                warn("Saved key expired or invalid: " .. tostring(msg))
+            end
+        end
+    end
+
+    -- If no saved key or auto-login failed, show UI
+    createLoginUI()
+end)
+
+-- ==========================================
+-- LOGIN UI SETUP
+-- ==========================================
+function createLoginUI()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "ExoticaKeyLoader"
+    screenGui.ResetOnSpawn = false
+    screenGui.Parent = (gethui and gethui()) or CoreGui
+
+    local frame = Instance.new("Frame", screenGui)
+    frame.Size = UDim2.new(0, 320, 0, 160)
+    frame.Position = UDim2.new(0.5, -160, 0.5, -80)
+    frame.BackgroundColor3 = Color3.fromRGB(18, 18, 26)
+    frame.BorderSizePixel = 0
+
+    local uiCorner = Instance.new("UICorner", frame)
+    uiCorner.CornerRadius = UDim.new(0, 8)
+
+    local title = Instance.new("TextLabel", frame)
+    title.Size = UDim2.new(1, 0, 0, 40)
+    title.BackgroundTransparency = 1
+    title.Font = Enum.Font.GothamBold
+    title.Text = "Exotica Macros - Login"
+    title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    title.TextSize = 16
+
+    local textBox = Instance.new("TextBox", frame)
+    textBox.Size = UDim2.new(0.85, 0, 0, 40)
+    textBox.Position = UDim2.new(0.075, 0, 0.35, 0)
+    textBox.BackgroundColor3 = Color3.fromRGB(28, 28, 38)
+    textBox.PlaceholderText = "Enter License Key..."
+    textBox.Text = ""
+    textBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+    textBox.Font = Enum.Font.Gotham
+    textBox.TextSize = 14
+
+    local boxCorner = Instance.new("UICorner", textBox)
+    boxCorner.CornerRadius = UDim.new(0, 6)
+
+    local submitBtn = Instance.new("TextButton", frame)
+    submitBtn.Size = UDim2.new(0.85, 0, 0, 40)
+    submitBtn.Position = UDim2.new(0.075, 0, 0.65, 0)
+    submitBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 100)
+    submitBtn.Font = Enum.Font.GothamBold
+    submitBtn.Text = "Verify Key"
+    submitBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    submitBtn.TextSize = 14
+
+    local btnCorner = Instance.new("UICorner", submitBtn)
+    btnCorner.CornerRadius = UDim.new(0, 6)
+
+    submitBtn.Activated:Connect(function()
+        local enteredKey = textBox.Text
+        if enteredKey == "" then
+            textBox.PlaceholderText = "Please enter a key!"
+            return
+        end
+
+        submitBtn.Text = "Verifying..."
+        
+        local success, msg = validateKey(enteredKey)
+        if success then
             submitBtn.Text = "Success! Loading..."
             task.wait(1)
             screenGui:Destroy()
-            
-            local mainScriptUrl = "https://raw.githubusercontent.com/YARDEDDx/beta-test-macro-/refs/heads/main/macro?nocache=" .. tostring(tick())
-            local fetchSuccess, result = pcall(function()
-                return game:HttpGet(mainScriptUrl)
-            end)
-
-            if not fetchSuccess or not result or result == "" then
-                warn("Failed to fetch master script from GitHub!")
-                return
-            end
-
-            local fn, err = loadstring(result)
-            if not fn then
-                warn("Compile Error: " .. tostring(err))
-                return
-            end
-
-            print("Executing Master Suite...")
-            fn()
+            executeMasterScript()
         else
             submitBtn.Text = "Verify Key"
             textBox.Text = ""
-            textBox.PlaceholderText = data.message or "Invalid or expired key!"
+            textBox.PlaceholderText = msg
         end
-    else
-        submitBtn.Text = "Verify Key"
-        textBox.Text = ""
-        textBox.PlaceholderText = "Connection error to KeyAuth!"
-    end
-end)
+    end)
+end
