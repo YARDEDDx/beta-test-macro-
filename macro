@@ -194,7 +194,12 @@ end
 
 local KC = Enum.KeyCode
 
--- Board combo: built event-for-event from the Razer Synapse XML (114ms total).
+-- Synapse's slot 4 step is a "Double Click": two quick left clicks. The XML doesn't record
+-- how fast Razer's double click is, so each of the two clicks is held this many ms.
+-- If the slot 4 weapon still doesn't hit, try raising it (10, 15, 20).
+local DoubleClickMs = 8
+
+-- Board combo: built event-for-event from the Razer Synapse XML (114ms + the double click).
 -- Args are hold (ms between down and up) then gap (ms of delay after the up).
 -- A hold of 0 is an instant tap, exactly as the XML has it.
 local BoardSeq = newSeq()
@@ -202,7 +207,8 @@ local BoardSeq = newSeq()
     .click(12)
     .click(12)
     .key(KC.Four, 0)
-    .click(0, 20) -- the XML's slot 4 step, sent as a left click (no side button)
+    .click(DoubleClickMs)     -- Double Click: first click
+    .click(DoubleClickMs, 20) -- Double Click: second click, then the XML's 20ms delay
     .key(KC.Eight, 0)
     .click(20)
     .click(20)
