@@ -371,7 +371,7 @@ pcall(function()
     local sg = Instance.new("ScreenGui")
     sg.Name = "ExoticaMasterSuite"
     sg.ResetOnSpawn = false
-    sg.DisplayOrder = 999999999 -- always render above other game UI (shops, spin wheels, event popups)
+    sg.DisplayOrder = 2147483647 -- the actual max; always render above other game UI (shops, spin wheels, event popups)
     sg.Parent = core
 
     -- Toggle button
@@ -387,7 +387,7 @@ pcall(function()
     corner(toggleBtn, 25)
     local tStroke = Instance.new("UIStroke", toggleBtn)
     tStroke.Color = Color3.fromRGB(0, 200, 255)
-    tStroke.Thickness = 2.5
+    tStroke.Thickness = 4
     gradientStroke(tStroke)
     local toggleState = makeDraggable(toggleBtn, toggleBtn)
 
@@ -405,7 +405,7 @@ pcall(function()
     local fStroke = Instance.new("UIStroke", f)
     fStroke.Color = Color3.fromRGB(0, 200, 255)
     fStroke.Transparency = 0.25
-    fStroke.Thickness = 2.5
+    fStroke.Thickness = 4
     gradientStroke(fStroke)
 
     local title = Instance.new("TextButton", f)
@@ -413,6 +413,7 @@ pcall(function()
     title.BackgroundTransparency = 1
     title.Font = Enum.Font.GothamBold
     title.Text = "EXOTICA // MACROS"
+    gradientStroke(title) -- UIGradient also works directly on a TextLabel's own glyphs, not just strokes
     title.TextColor3 = Color3.fromRGB(255, 255, 255)
     title.TextSize = 15
     title.AutoButtonColor = false
@@ -439,6 +440,7 @@ pcall(function()
     container.ScrollBarImageColor3 = COLORS.accent
     container.CanvasSize = UDim2.new(1, 0, 0, 0) -- full width, no horizontal scroll; AutomaticCanvasSize fills in the height
     container.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    container.ScrollingDirection = Enum.ScrollingDirection.Y -- vertical only; without this it defaults to both and shows a horizontal bar too
     local layout = Instance.new("UIListLayout", container)
     layout.SortOrder = Enum.SortOrder.LayoutOrder
     layout.Padding = UDim.new(0, 8)
@@ -688,7 +690,7 @@ pcall(function()
     local infoStroke = Instance.new("UIStroke", infoFrame)
     infoStroke.Color = Color3.fromRGB(0, 200, 255)
     infoStroke.Transparency = 0.25
-    infoStroke.Thickness = 2.5
+    infoStroke.Thickness = 4
     gradientStroke(infoStroke)
 
     local infoTitle = Instance.new("TextButton", infoFrame)
@@ -696,6 +698,7 @@ pcall(function()
     infoTitle.BackgroundTransparency = 1
     infoTitle.Font = Enum.Font.GothamBold
     infoTitle.Text = "SLOT SETUP"
+    gradientStroke(infoTitle)
     infoTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
     infoTitle.TextSize = 13
     infoTitle.AutoButtonColor = false
@@ -870,7 +873,7 @@ pcall(function()
     triggerMacro = function(name)
         if not hasShownSlotWarning then
             hasShownSlotWarning = true
-            showSlotWarning()
+            pcall(showSlotWarning) -- a toast rendering issue must never block the macro from firing
         end
         Macros[name]()
     end
