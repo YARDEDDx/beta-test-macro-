@@ -663,7 +663,7 @@ pcall(function()
     infoStroke.Thickness = 2
 
     local infoTitle = Instance.new("TextButton", infoFrame)
-    infoTitle.Size = UDim2.new(1, 0, 0, 30)
+    infoTitle.Size = UDim2.new(1, -36, 0, 30) -- leaves room for the close button
     infoTitle.BackgroundTransparency = 1
     infoTitle.Font = Enum.Font.GothamBold
     infoTitle.Text = "SLOT SETUP"
@@ -671,6 +671,20 @@ pcall(function()
     infoTitle.TextSize = 13
     infoTitle.AutoButtonColor = false
     makeDraggable(infoTitle, infoFrame)
+
+    local infoCloseBtn = Instance.new("TextButton", infoFrame)
+    infoCloseBtn.Size = UDim2.new(0, 26, 0, 26)
+    infoCloseBtn.Position = UDim2.new(1, -32, 0, 2)
+    infoCloseBtn.BackgroundColor3 = COLORS.btn
+    infoCloseBtn.Font = Enum.Font.GothamBold
+    infoCloseBtn.Text = "✕"
+    infoCloseBtn.TextColor3 = Color3.fromRGB(230, 230, 240)
+    infoCloseBtn.TextSize = 13
+    infoCloseBtn.AutoButtonColor = false
+    corner(infoCloseBtn, 8)
+    infoCloseBtn.Activated:Connect(function()
+        infoFrame.Visible = false
+    end)
 
     local PAD = 14
     local y = 30
@@ -749,14 +763,14 @@ pcall(function()
         toast.Size = UDim2.new(0, 280, 0, 74)
         toast.Position = UDim2.new(0.5, -140, 0.06, 0)
         toast.BackgroundColor3 = COLORS.panel
-        toast.BackgroundTransparency = 1
+        toast.BackgroundTransparency = 0 -- fully opaque from the first rendered frame, no fade-in to be caught mid-way
         toast.AutoButtonColor = false
         toast.Text = ""
         toast.ZIndex = 50
         corner(toast, 14)
         local toastStroke = Instance.new("UIStroke", toast)
         toastStroke.Color = COLORS.warn
-        toastStroke.Transparency = 1
+        toastStroke.Transparency = 0
         toastStroke.Thickness = 2
 
         local toastTitle = Instance.new("TextLabel", toast)
@@ -767,7 +781,7 @@ pcall(function()
         toastTitle.TextXAlignment = Enum.TextXAlignment.Left
         toastTitle.TextColor3 = COLORS.warn
         toastTitle.TextSize = 13
-        toastTitle.TextTransparency = 1
+        toastTitle.TextTransparency = 0
         toastTitle.Text = "⚠️ Check Your Slots"
 
         local toastBody = Instance.new("TextLabel", toast)
@@ -778,9 +792,9 @@ pcall(function()
         toastBody.TextXAlignment = Enum.TextXAlignment.Left
         toastBody.TextYAlignment = Enum.TextYAlignment.Top
         toastBody.TextWrapped = true
-        toastBody.TextColor3 = Color3.fromRGB(220, 220, 230)
+        toastBody.TextColor3 = Color3.fromRGB(255, 255, 255) -- pure white, max contrast against the near-black panel
         toastBody.TextSize = 11
-        toastBody.TextTransparency = 1
+        toastBody.TextTransparency = 0
         toastBody.Text = "Put every weapon in the slot shown, or the macro won't work right."
 
         local toastHint = Instance.new("TextLabel", toast)
@@ -789,9 +803,9 @@ pcall(function()
         toastHint.BackgroundTransparency = 1
         toastHint.Font = Enum.Font.GothamMedium
         toastHint.TextXAlignment = Enum.TextXAlignment.Left
-        toastHint.TextColor3 = Color3.fromRGB(140, 140, 170)
+        toastHint.TextColor3 = Color3.fromRGB(170, 170, 195)
         toastHint.TextSize = 9
-        toastHint.TextTransparency = 1
+        toastHint.TextTransparency = 0
         toastHint.Text = "Tap for Slot Setup"
 
         pcall(function()
@@ -801,15 +815,8 @@ pcall(function()
             sound:Play()
         end)
 
-        local fadeIn = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
         local fadeOut = TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
         local labels = { toastTitle, toastBody, toastHint }
-
-        TweenService:Create(toast, fadeIn, { BackgroundTransparency = 0.03 }):Play()
-        TweenService:Create(toastStroke, fadeIn, { Transparency = 0.1 }):Play()
-        for _, lbl in ipairs(labels) do
-            TweenService:Create(lbl, fadeIn, { TextTransparency = 0 }):Play()
-        end
 
         local dismissed = false
         local function dismiss()
