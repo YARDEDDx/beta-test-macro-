@@ -411,7 +411,7 @@ pcall(function()
     container.ScrollBarThickness = 4
     container.ScrollBarImageColor3 = COLORS.accent
     container.CanvasSize = UDim2.new(1, 0, 0, 0) -- full width, no horizontal scroll; AutomaticCanvasSize fills in the height
-    container.AutomaticCanvasSize = Enum.AutomaticCanvasSize.Y
+    container.AutomaticCanvasSize = Enum.AutomaticSize.Y
     local layout = Instance.new("UIListLayout", container)
     layout.SortOrder = Enum.SortOrder.LayoutOrder
     layout.Padding = UDim.new(0, 8)
