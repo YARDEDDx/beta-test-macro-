@@ -210,7 +210,7 @@ end
 local SlotInfo = {
     {
         heading = "⚔️ Weapons",
-        subtitle = "Equip to use the macros",
+        subtitle = "Must be in the exact slot",
         rows = {
             { slot = "5", item = "RPG" },
             { slot = "6", item = "Loveboard" },
@@ -223,7 +223,7 @@ local SlotInfo = {
         subtitle = "Needed for the Board Combo",
         rows = {
             { slot = "1", item = "Taser" },
-            { slot = "4", item = "Yin & Yang / Knives" },
+            { slot = "4", item = "Yin & Yang (preferred) / Pink Stop Sign" },
             { slot = "8", item = "Fist / Brass Knuckles (preferred)" },
             { slot = "0", item = "Parasol / Slasher Claws (preferred)" },
         },
@@ -284,6 +284,7 @@ local Macros = {
 -- UI
 -- ==========================================
 local listeningMacro = nil
+local hasShownSlotWarning = false -- only the very first macro trigger (any of the 3) shows the warning
 local core = (gethui and gethui()) or game:GetService("CoreGui")
 
 local COLORS = {
@@ -292,6 +293,7 @@ local COLORS = {
     btn = Color3.fromRGB(35, 35, 50),
     accent = Color3.fromRGB(0, 220, 255),  -- cyan: weapons / primary brand accent
     accent2 = Color3.fromRGB(190, 120, 255), -- violet: combo slots, kept distinct from accent
+    warn = Color3.fromRGB(255, 180, 60),   -- amber: the first-trigger slot warning
 }
 
 local function corner(obj, r)
@@ -359,7 +361,7 @@ pcall(function()
 
     -- Main frame
     local f = Instance.new("Frame", sg)
-    f.Size = UDim2.new(0, 260, 0, 350)
+    f.Size = UDim2.new(0, 260, 0, 400) -- tall enough for all 7 rows (3 macros + Assist + Target + Sensitivity + Slots)
     f.Position = UDim2.new(0.02, 55, 0.28, 0)
     f.BackgroundColor3 = COLORS.panel
     f.BackgroundTransparency = 0.08
@@ -569,6 +571,108 @@ pcall(function()
     infoBtn.Activated:Connect(function()
         infoFrame.Visible = not infoFrame.Visible
     end)
+
+    -- First-trigger slot warning: a toast that appears once, the first time any
+    -- macro fires, reminding the player to check their slots. Tapping it opens
+    -- Slot Setup; otherwise it fades out on its own.
+    -- Swap in your own uploaded sound's asset id here if this one doesn't play —
+    -- it's a commonly cited built-in id, not one I could confirm still works.
+    local WarningSoundId = "rbxasset://sounds/electronicpingshort.wav"
+
+    local function showSlotWarning()
+        local toast = Instance.new("TextButton", sg)
+        toast.Size = UDim2.new(0, 280, 0, 74)
+        toast.Position = UDim2.new(0.5, -140, 0.06, 0)
+        toast.BackgroundColor3 = COLORS.panel
+        toast.BackgroundTransparency = 1
+        toast.AutoButtonColor = false
+        toast.Text = ""
+        toast.ZIndex = 50
+        corner(toast, 14)
+        local toastStroke = Instance.new("UIStroke", toast)
+        toastStroke.Color = COLORS.warn
+        toastStroke.Transparency = 1
+        toastStroke.Thickness = 2
+
+        local toastTitle = Instance.new("TextLabel", toast)
+        toastTitle.Size = UDim2.new(1, -20, 0, 20)
+        toastTitle.Position = UDim2.new(0, 10, 0, 8)
+        toastTitle.BackgroundTransparency = 1
+        toastTitle.Font = Enum.Font.GothamBold
+        toastTitle.TextXAlignment = Enum.TextXAlignment.Left
+        toastTitle.TextColor3 = COLORS.warn
+        toastTitle.TextSize = 13
+        toastTitle.TextTransparency = 1
+        toastTitle.Text = "⚠️ Check Your Slots"
+
+        local toastBody = Instance.new("TextLabel", toast)
+        toastBody.Size = UDim2.new(1, -20, 0, 32)
+        toastBody.Position = UDim2.new(0, 10, 0, 28)
+        toastBody.BackgroundTransparency = 1
+        toastBody.Font = Enum.Font.Gotham
+        toastBody.TextXAlignment = Enum.TextXAlignment.Left
+        toastBody.TextYAlignment = Enum.TextYAlignment.Top
+        toastBody.TextWrapped = true
+        toastBody.TextColor3 = Color3.fromRGB(220, 220, 230)
+        toastBody.TextSize = 11
+        toastBody.TextTransparency = 1
+        toastBody.Text = "Put every weapon in the slot shown, or the macro won't work right."
+
+        local toastHint = Instance.new("TextLabel", toast)
+        toastHint.Size = UDim2.new(1, -20, 0, 12)
+        toastHint.Position = UDim2.new(0, 10, 1, -18)
+        toastHint.BackgroundTransparency = 1
+        toastHint.Font = Enum.Font.GothamMedium
+        toastHint.TextXAlignment = Enum.TextXAlignment.Left
+        toastHint.TextColor3 = Color3.fromRGB(140, 140, 170)
+        toastHint.TextSize = 9
+        toastHint.TextTransparency = 1
+        toastHint.Text = "Tap for Slot Setup"
+
+        pcall(function()
+            local sound = Instance.new("Sound", toast)
+            sound.SoundId = WarningSoundId
+            sound.Volume = 0.5
+            sound:Play()
+        end)
+
+        local fadeIn = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local fadeOut = TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+        local labels = { toastTitle, toastBody, toastHint }
+
+        TweenService:Create(toast, fadeIn, { BackgroundTransparency = 0.08 }):Play()
+        TweenService:Create(toastStroke, fadeIn, { Transparency = 0.2 }):Play()
+        for _, lbl in ipairs(labels) do
+            TweenService:Create(lbl, fadeIn, { TextTransparency = 0 }):Play()
+        end
+
+        local dismissed = false
+        local function dismiss()
+            if dismissed then return end
+            dismissed = true
+            TweenService:Create(toast, fadeOut, { BackgroundTransparency = 1 }):Play()
+            TweenService:Create(toastStroke, fadeOut, { Transparency = 1 }):Play()
+            for _, lbl in ipairs(labels) do
+                TweenService:Create(lbl, fadeOut, { TextTransparency = 1 }):Play()
+            end
+            task.delay(fadeOut.Time, function() toast:Destroy() end)
+        end
+
+        toast.Activated:Connect(function()
+            infoFrame.Visible = true
+            dismiss()
+        end)
+
+        task.delay(5, dismiss)
+    end
+
+    local function triggerMacro(name)
+        if not hasShownSlotWarning then
+            hasShownSlotWarning = true
+            showSlotWarning()
+        end
+        Macros[name]()
+    end
 
     -- Show / hide
     toggleBtn.Activated:Connect(function()
