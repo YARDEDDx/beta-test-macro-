@@ -1,474 +1,826 @@
--- Dynamically build the authorization key so string obfuscators never touch it
-local part1 = string.char(69, 120, 111, 116, 105, 99, 97) -- "Exotica"
-local part2 = string.char(65, 117, 116, 104, 111, 114, 105, 122, 101, 100, 83, 101, 115, 115, 105, 111, 110) -- "AuthorizedSession"
-local sessionKey = part1 .. part2
-
-if not rawget(_G, sessionKey) then
-    warn("Unauthorized execution attempt detected!")
-    return
-end
-
--- [The rest of your obfuscated or normal master script code goes here]
-local UIS = game:GetService("UserInputService")
-local Players = game:GetService("Players")
-local VIM = game:GetService("VirtualInputManager")
-local RunService = game:GetService("RunService")
-local HttpService = game:GetService("HttpService")
-local TweenService = game:GetService("TweenService")
-local Stats = game:GetService("Stats")
-local p = Players.LocalPlayer
-local clock = os.clock
-local KC = Enum.KeyCode
-
 -- ==========================================
--- RE-RUN SAFETY
--- Every connection is registered here so running the script a second time cleanly
--- replaces the first copy instead of stacking duplicate hotkeys (double-firing macros).
+-- UI
 -- ==========================================
-local Conns = {}
-local Alive = { v = true }
-local function keep(conn)
-    Conns[#Conns + 1] = conn
-    return conn
-end
+local WIN_W, WIN_H = 344, 470
+local PANEL_W = 304
 
-do
-    local prev = rawget(_G, "__ExoticaCleanup")
-    if type(prev) == "function" then pcall(prev) end
-end
-
--- Late-bound bridge to the UI. Everything the UI provides (toast, key-chip refresh, ...)
--- is optional, so the macros and hotkeys keep working even if the UI fails to build.
-local UI = {}
-local function safeUI(name, ...)
-    local fn = UI[name]
-    if fn then pcall(fn, ...) end
-end
-
--- ==========================================
--- CONFIG / KEYBINDS
--- ==========================================
-local SAVE_FILE = "Exotica_Macro_Settings.json"
-
--- Hardcoded defaults. The save file only overrides these after a UI rebind.
-local Config = {
-    Snowball = { Key = Enum.KeyCode.ButtonY,      Label = "❄️ Snowball" },
-    Board    = { Key = Enum.KeyCode.Thumbstick1,  Label = "🛹 Board Combo" },
-    RPG      = { Key = Enum.KeyCode.DPadLeft,     Label = "🚀 RPG" },
+local MacroOrder = { "Snowball", "Board", "RPG" }
+local MacroMeta = {
+    Snowball = { icon = "❄️", title = "Snowball",    sub = "Three aimed shots" },
+    Board    = { icon = "🛹", title = "Board Combo", sub = "Five-weapon chain" },
+    RPG      = { icon = "🚀", title = "RPG",         sub = "Fire, reload, swap back" },
 }
 
-if writefile and readfile and isfile and isfile(SAVE_FILE) then
-    pcall(function()
-        local data = HttpService:JSONDecode(readfile(SAVE_FILE))
-        for macroName, keyName in pairs(data) do
-            local ok, kc = pcall(function() return Enum.KeyCode[keyName] end)
-            if ok and kc and Config[macroName] then
-                Config[macroName].Key = kc
+local AIM_MODES = { "Classic", "Aggressive", "Smart", "Custom" }
+local MODE_TEXT = {
+    Classic    = "The original tuning: steady follow and a short lead.",
+    Aggressive = "Locks on almost instantly and leads far ahead of movement.",
+    Smart      = "Leads each target by its distance and your ping. Tune the projectile speed below.",
+    Custom     = "Set every value yourself with the sliders below.",
+}
+
+local function buildUI()
+    -- A copy left over from an older version of this script
+    local old = core:FindFirstChild("ExoticaMasterSuite")
+    if old then old:Destroy() end
+
+    local sg = Instance.new("ScreenGui")
+    sg.Name = "ExoticaMasterSuite"
+    sg.ResetOnSpawn = false
+    sg.IgnoreGuiInset = true -- so UI coordinates match the camera's screen coordinates (aim marker)
+    sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling -- layering is explicit and never depends on global ZIndex
+    sg.DisplayOrder = 999999999 -- always render above other game UI (shops, spin wheels, event popups)
+    uiRoot = sg
+
+    local windowPopup, panelPopup -- assigned below; the close buttons and rows reach them
+
+    -- ---------- Aim marker (optional ring where Assist is aiming) ----------
+    local marker = frame({
+        Name = "AimMarker", AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.new(0, 34, 0, 34),
+        Visible = false, ZIndex = 1,
+    }, sg)
+    corner(marker, "pill")
+    stroke(marker, C.accent, 2, 0.1)
+    local markerDot = frame({
+        AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 0), Size = UDim2.new(0, 4, 0, 4),
+        BackgroundColor3 = C.accent, BackgroundTransparency = 0,
+    }, marker)
+    corner(markerDot, "pill")
+
+    -- ---------- Main window ----------
+    local win = frame({
+        Name = "Window", AnchorPoint = Vector2.new(0.5, 0.5),
+        Size = UDim2.new(0, WIN_W, 0, WIN_H), Position = UDim2.new(0, 400, 0, 300),
+        Visible = false, ZIndex = 10,
+    }, sg)
+    local fit = Instance.new("UIScale")
+    fit.Parent = win
+    local gw = glassCard(win, 26)
+    local card = gw.card
+
+    -- Header
+    local logo = frame({
+        Position = UDim2.new(0, 16, 0, 15), Size = UDim2.new(0, 34, 0, 34),
+        BackgroundColor3 = C.white, BackgroundTransparency = 0,
+    }, card)
+    corner(logo, 11)
+    gradient(logo, { Color = cseq(C.accent, C.accent2), Rotation = 45 })
+    label({
+        Size = UDim2.new(1, 0, 1, 0), Text = "E", Font = FONT_BOLD, TextSize = 18,
+        TextColor3 = Color3.fromRGB(10, 14, 26), TextXAlignment = Center,
+    }, logo)
+    label({
+        Position = UDim2.new(0, 58, 0, 13), Size = UDim2.new(1, -120, 0, 22),
+        Text = "Exotica", Font = FONT_BOLD, TextSize = 18,
+    }, card)
+    label({
+        Position = UDim2.new(0, 58, 0, 34), Size = UDim2.new(1, -120, 0, 14),
+        Text = "Macro suite, v2", TextSize = 11, TextColor3 = C.faint,
+    }, card)
+    local dragHandle = hit({ Size = UDim2.new(1, -60, 0, 64) }, card)
+    makeDraggable(dragHandle, win, 90)
+    closeButton(card, UDim2.new(1, -31, 0, 32), function()
+        panelPopup.set(false)
+        windowPopup.set(false)
+    end)
+
+    -- Pages: each is a CanvasGroup (so it can fade) holding a ScrollingFrame
+    local PAGE_TOP = 116
+    local pages, currentPage = {}, 0
+
+    local function makePage()
+        local g = Instance.new("CanvasGroup")
+        g.Name = "Page"
+        g.BackgroundTransparency = 1
+        g.BorderSizePixel = 0
+        g.Position = UDim2.new(0, 0, 0, PAGE_TOP)
+        g.Size = UDim2.new(1, 0, 1, -(PAGE_TOP + 10))
+        g.GroupTransparency = 1
+        g.Visible = false
+        g.Parent = card
+
+        local sf = Instance.new("ScrollingFrame")
+        sf.BackgroundTransparency = 1
+        sf.BorderSizePixel = 0
+        sf.Position = UDim2.new(0, 12, 0, 0)
+        sf.Size = UDim2.new(1, -24, 1, 0)
+        sf.CanvasSize = UDim2.new(1, 0, 0, 0) -- full width, no sideways scroll; the height is automatic
+        sf.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        sf.ScrollingDirection = Enum.ScrollingDirection.Y
+        sf.ScrollBarThickness = 3
+        sf.ScrollBarImageColor3 = C.accent
+        sf.ScrollBarImageTransparency = 0.3
+        sf.Parent = g
+
+        local lay = Instance.new("UIListLayout")
+        lay.SortOrder = Enum.SortOrder.LayoutOrder
+        lay.Padding = UDim.new(0, 0)
+        lay.Parent = sf
+        local pad = Instance.new("UIPadding")
+        pad.PaddingRight = UDim.new(0, 6)
+        pad.PaddingBottom = UDim.new(0, 4)
+        pad.Parent = sf
+        return { group = g, scroller = sf }
+    end
+    pages[1], pages[2] = makePage(), makePage()
+
+    local function showPage(i, instant)
+        if i == currentPage then return end
+        local prev = pages[currentPage]
+        currentPage = i
+        if prev then
+            if instant then
+                prev.group.Visible = false
+            else
+                tween(prev.group, 0.16, { GroupTransparency = 1 }, ES.Quad, ED.In)
+                task.delay(0.18, function()
+                    if pages[currentPage] ~= prev then prev.group.Visible = false end
+                end)
             end
         end
-    end)
-end
-
-local function saveKeybinds()
-    if not writefile then return end
-    pcall(function()
-        local data = {}
-        for macroName, info in pairs(Config) do
-            data[macroName] = info.Key.Name
-        end
-        writefile(SAVE_FILE, HttpService:JSONEncode(data))
-    end)
-end
-
--- ==========================================
--- ASSIST (starts OFF)
---
--- How the numbers work (this is what the UI sliders edit):
---   Smoothing  ("Strength")  how tightly the aim point follows the target each frame.
---                            1.0 = locked on instantly, lower = the point trails behind.
---                            It is frame-rate independent (tuned at 60 FPS).
---   Prediction               base lead time in seconds: aims at where the target will be
---                            after this long, using its measured velocity.
---   ProjectileSpeed          studs/sec. When > 0, adds distance / speed to the lead so far
---                            targets get led more than near ones. 0 = instant (off).
---   PingComp                 adds your live round-trip ping to the lead time.
--- ==========================================
-local AssistSettings = {
-    Enabled = false,
-    TargetPlayer = "Auto (Closest)",
-    Effectiveness = 400,
-    Mode = "Classic",
-    -- LIVE values read every frame. Classic/Aggressive/Smart overwrite them with fixed
-    -- numbers when selected; Custom copies them from the Custom* values below, which the
-    -- sliders edit directly, so dragging a slider changes real behavior immediately.
-    Smoothing = 0.6,
-    Prediction = 0.12,
-    ProjectileSpeed = 0,
-    PingComp = false,
-    CustomSmoothing = 0.6,        -- starts equal to Classic
-    CustomPrediction = 0.12,      -- starts equal to Classic
-    CustomProjectileSpeed = 0,    -- 0 = off, so Custom starts out behaving like Classic
-    SmartProjectileSpeed = 200,   -- best guess; tune it in the Assist tab if shots lead too much/little
-    RadiusPresets = { 150, 250, 400, 600, 9999 },
-}
-
-local function applyAimMode(name)
-    local s = AssistSettings
-    s.Mode = name
-    if name == "Classic" then
-        s.Smoothing, s.Prediction, s.ProjectileSpeed, s.PingComp = 0.6, 0.12, 0, false
-    elseif name == "Aggressive" then
-        s.Smoothing, s.Prediction, s.ProjectileSpeed, s.PingComp = 0.95, 0.3, 0, false
-    elseif name == "Smart" then
-        s.Smoothing, s.Prediction, s.ProjectileSpeed, s.PingComp = 1.0, 0.08, s.SmartProjectileSpeed, true
-    else -- Custom
-        s.Smoothing, s.Prediction, s.ProjectileSpeed, s.PingComp =
-            s.CustomSmoothing, s.CustomPrediction, s.CustomProjectileSpeed, false
-    end
-end
-
-local currentBestTarget = nil -- Vector2 screen point the Snowball macro clicks on (nil = no target)
-local lockedPlayer = nil
-local tracks = {}             -- [player] = { root, pos, vel, t }
-local pingRtt = 0.08          -- smoothed round-trip ping in seconds
-
-local STICKY_RATIO = 1.35     -- keep the current target unless another is >35% closer to the crosshair
-local VEL_TAU = 0.08          -- velocity filter time constant (seconds)
-local MAX_TRACK_SPEED = 260   -- studs/s; anything faster is a teleport, not movement
-local MAX_LEAD = 0.8          -- never lead more than this many seconds
-
-task.spawn(function()
-    while Alive.v do
-        local rtt
-        local ok, ms = pcall(function() return Stats.Network.ServerStatsItem["Data Ping"]:GetValue() end)
-        if ok and type(ms) == "number" and ms > 0 then
-            rtt = ms / 1000
+        local pg = pages[i]
+        pg.group.Visible = true
+        if instant then
+            pg.group.GroupTransparency = 0
+            pg.group.Position = UDim2.new(0, 0, 0, PAGE_TOP)
         else
-            local ok2, one = pcall(function() return p:GetNetworkPing() end)
-            if ok2 and type(one) == "number" then rtt = one * 2 end
+            pg.group.GroupTransparency = 1
+            pg.group.Position = UDim2.new(0, 0, 0, PAGE_TOP + 12)
+            tween(pg.group, 0.36, { GroupTransparency = 0, Position = UDim2.new(0, 0, 0, PAGE_TOP) })
         end
-        if rtt then
-            pingRtt = pingRtt + (math.clamp(rtt, 0, 0.6) - pingRtt) * 0.4
-        end
-        task.wait(0.75)
-    end
-end)
-
-local function stepAssist(dt)
-    local s = AssistSettings
-    if not s.Enabled then
-        currentBestTarget, lockedPlayer = nil, nil
-        if next(tracks) ~= nil then tracks = {} end -- no stale velocities when it's switched back on
-        return
-    end
-    local cam = workspace.CurrentCamera
-    if not cam then
-        currentBestTarget = nil
-        return
     end
 
-    local now = clock()
-    local vs = cam.ViewportSize
-    local center = Vector2.new(vs.X / 2, vs.Y / 2)
-    local myRoot = p.Character and p.Character:FindFirstChild("HumanoidRootPart")
-    local origin = myRoot and myRoot.Position or cam.CFrame.Position
-    local auto = (s.TargetPlayer == "Auto (Closest)")
+    local tabs = segmented(card, UDim2.new(0, 16, 0, 66), UDim2.new(1, -32, 0, 38), { "Macros", "Assist" }, function(i)
+        showPage(i)
+    end, 13)
 
-    local bestPlr, bestScreen, bestD
-    local lockScreen, lockD
+    local function counter()
+        local n = 0
+        return function() n = n + 1 return n end
+    end
 
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= p then
-            local char = plr.Character
-            local root = char and char:FindFirstChild("HumanoidRootPart")
-            local hum = char and char:FindFirstChildOfClass("Humanoid")
-            if root and hum and hum.Health > 0 then
-                local pos = root.Position
+    -- ---------- Macros page ----------
+    local msf = pages[1].scroller
+    local nextM = counter()
+    local chips, glows = {}, {}
+    local pulseToken = 0
 
-                -- Velocity is measured for every valid player every frame (so it's already
-                -- warm when you pick them), smoothed with a time-constant filter so network
-                -- replication jitter doesn't throw the lead around.
-                local tr = tracks[plr]
-                if not tr or tr.root ~= root then -- first sight, or they respawned
-                    tr = { root = root, pos = pos, vel = Vector3.new(0, 0, 0), t = now }
-                    tracks[plr] = tr
+    local function refreshChips()
+        pulseToken = pulseToken + 1
+        local my = pulseToken
+        for _, name in ipairs(MacroOrder) do
+            local ch = chips[name]
+            if ch then
+                if listeningMacro == name then
+                    ch.btn.Text = "Press a key"
+                    ch.btn.TextColor3 = C.warn
+                    tween(ch.stroke, 0.2, { Color = C.warn, Transparency = 0.2 })
+                    tween(ch.btn, 0.2, { BackgroundTransparency = 0.8 })
                 else
-                    local sdt = now - tr.t
-                    if sdt > 0 then
-                        if sdt > 0.3 then
-                            tr.vel = Vector3.new(0, 0, 0)
-                        else
-                            local raw = (pos - tr.pos) / sdt
-                            if raw.Magnitude > MAX_TRACK_SPEED then
-                                tr.vel = Vector3.new(0, 0, 0)
-                            else
-                                tr.vel = tr.vel:Lerp(raw, 1 - math.exp(-sdt / VEL_TAU))
-                            end
-                        end
-                        tr.pos, tr.t = pos, now
-                    end
-                end
-
-                if auto or plr.Name == s.TargetPlayer then
-                    local lead = s.Prediction
-                    if s.ProjectileSpeed > 0 then
-                        lead = lead + (pos - origin).Magnitude / s.ProjectileSpeed
-                    end
-                    if s.PingComp then lead = lead + pingRtt end
-                    lead = math.clamp(lead, 0, MAX_LEAD)
-
-                    local sp, onScreen = cam:WorldToViewportPoint(pos + tr.vel * lead)
-                    if onScreen then
-                        local v = Vector2.new(sp.X, sp.Y)
-                        local d = (v - center).Magnitude
-                        if d < s.Effectiveness then
-                            if not bestD or d < bestD then
-                                bestPlr, bestScreen, bestD = plr, v, d
-                            end
-                            if plr == lockedPlayer then
-                                lockScreen, lockD = v, d
-                            end
-                        end
-                    end
+                    ch.btn.Text = prettyKey(Config[name].Key)
+                    ch.btn.TextColor3 = C.accent
+                    tween(ch.stroke, 0.2, { Color = C.accent, Transparency = 0.55 })
+                    tween(ch.btn, 0.2, { BackgroundTransparency = 0.9 })
                 end
             end
         end
+        if listeningMacro then
+            local name = listeningMacro
+            task.spawn(function() -- gentle pulse on the chip that is waiting for a key
+                local dimmed = false
+                while Alive.v and pulseToken == my and listeningMacro == name do
+                    dimmed = not dimmed
+                    tween(chips[name].stroke, 0.55, { Transparency = dimmed and 0.7 or 0.15 }, ES.Sine, ED.InOut)
+                    task.wait(0.55)
+                end
+            end)
+        end
     end
 
-    -- Sticky targeting: don't flip between two similar targets frame to frame.
-    local pick, pickScreen = bestPlr, bestScreen
-    if lockScreen and bestD and lockD <= bestD * STICKY_RATIO + 12 then
-        pick, pickScreen = lockedPlayer, lockScreen
+    for _, name in ipairs(MacroOrder) do
+        local meta = MacroMeta[name]
+        local _, c = makeItem(msf, 64, nextM())
+        local glow = frame({ Size = UDim2.new(1, 0, 1, 0), BackgroundColor3 = C.accent, BackgroundTransparency = 1 }, c)
+        corner(glow, 16)
+        local run = hit({ Size = UDim2.new(1, 0, 1, 0) }, c)
+        pressable(run, c, 0.97)
+
+        local bubble = frame({
+            Position = UDim2.new(0, 12, 0.5, -21), Size = UDim2.new(0, 42, 0, 42),
+            BackgroundColor3 = C.white, BackgroundTransparency = 0.88,
+        }, c)
+        corner(bubble, 13)
+        label({ Size = UDim2.new(1, 0, 1, 0), Text = meta.icon, TextSize = 21, TextXAlignment = Center }, bubble)
+        label({
+            Position = UDim2.new(0, 66, 0, 13), Size = UDim2.new(1, -176, 0, 18),
+            Text = meta.title, Font = FONT_BOLD, TextSize = 14,
+        }, c)
+        label({
+            Position = UDim2.new(0, 66, 0, 33), Size = UDim2.new(1, -176, 0, 16),
+            Text = meta.sub, TextSize = 11, TextColor3 = C.dim,
+        }, c)
+
+        local chip = hit({
+            AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(1, -58, 0.5, 0), Size = UDim2.new(0, 92, 0, 32),
+            BackgroundColor3 = C.white, BackgroundTransparency = 0.9, Text = prettyKey(Config[name].Key),
+            Font = FONT_BOLD, TextSize = 12, TextColor3 = C.accent, TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 3,
+        }, c)
+        corner(chip, "pill")
+        local chipStroke = stroke(chip, C.accent, 1, 0.55)
+        pressable(chip, chip, 0.92)
+        chips[name] = { btn = chip, stroke = chipStroke }
+        glows[name] = glow
+
+        run.Activated:Connect(function() triggerMacro(name) end)
+        chip.Activated:Connect(function()
+            if listeningMacro == name then
+                listeningMacro = nil -- tapping the chip again cancels
+            else
+                listeningMacro = name
+            end
+            refreshChips()
+        end)
     end
 
-    if not pick then
-        currentBestTarget, lockedPlayer = nil, nil
-    elseif pick ~= lockedPlayer or not currentBestTarget then
-        lockedPlayer, currentBestTarget = pick, pickScreen -- new target: snap, don't glide across the screen
-    else
-        -- Frame-rate independent smoothing; identical to the old behavior at 60 FPS.
-        local alpha = 1 - (1 - s.Smoothing) ^ (math.clamp(dt, 0.001, 0.1) * 60)
-        currentBestTarget = currentBestTarget:Lerp(pickScreen, alpha)
+    do -- Slot setup row
+        local _, c = makeItem(msf, 56, nextM())
+        local btn = hit({ Size = UDim2.new(1, 0, 1, 0) }, c)
+        pressable(btn, c, 0.97)
+        local bubble = frame({
+            Position = UDim2.new(0, 12, 0.5, -19), Size = UDim2.new(0, 38, 0, 38),
+            BackgroundColor3 = C.white, BackgroundTransparency = 0.88,
+        }, c)
+        corner(bubble, 12)
+        label({ Size = UDim2.new(1, 0, 1, 0), Text = "ℹ️", TextSize = 18, TextXAlignment = Center }, bubble)
+        label({
+            Position = UDim2.new(0, 62, 0, 10), Size = UDim2.new(1, -150, 0, 18),
+            Text = "Slot setup", Font = FONT_BOLD, TextSize = 14,
+        }, c)
+        label({
+            Position = UDim2.new(0, 62, 0, 30), Size = UDim2.new(1, -150, 0, 16),
+            Text = "What goes in each slot", TextSize = 11, TextColor3 = C.dim,
+        }, c)
+        local pill = frame({
+            AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(1, -46, 0.5, 0), Size = UDim2.new(0, 68, 0, 30),
+            BackgroundColor3 = C.white, BackgroundTransparency = 0.9,
+        }, c)
+        corner(pill, "pill")
+        stroke(pill, C.accent, 1, 0.55)
+        local pillText = label({
+            Size = UDim2.new(1, 0, 1, 0), Text = "View", Font = FONT_BOLD, TextSize = 12,
+            TextColor3 = C.accent, TextXAlignment = Center,
+        }, pill)
+        UI.panelState = function(open) pillText.Text = open and "Hide" or "View" end
+        btn.Activated:Connect(function() panelPopup.set(not panelPopup.isOpen()) end)
     end
-end
 
-keep(RunService.RenderStepped:Connect(stepAssist))
-
-keep(Players.PlayerRemoving:Connect(function(plr)
-    tracks[plr] = nil
-    if lockedPlayer == plr then
-        lockedPlayer, currentBestTarget = nil, nil
+    do -- hint
+        local hint = frame({ Size = UDim2.new(1, 0, 0, 40), LayoutOrder = nextM() }, msf)
+        label({
+            Size = UDim2.new(1, 0, 1, 0), Text = "Tap a card to run it. Tap its key to rebind.",
+            TextSize = 11, TextColor3 = C.faint, TextXAlignment = Center,
+        }, hint)
     end
-    if AssistSettings.TargetPlayer == plr.Name then
-        AssistSettings.TargetPlayer = "Auto (Closest)"
-        safeUI("targetChanged")
+
+    -- ---------- Assist page ----------
+    local asf = pages[2].scroller
+    local nextA = counter()
+    local setMode, refreshReadout -- defined below, used by rows above them
+
+    -- Hero: the on/off switch plus a live status line
+    local heroSub
+    local setAssistVisual
+    do
+        local _, c, cStroke = makeItem(asf, 68, nextA())
+        local btn = hit({ Size = UDim2.new(1, 0, 1, 0) }, c)
+        pressable(btn, c, 0.975)
+        local bubble = frame({
+            Position = UDim2.new(0, 12, 0.5, -21), Size = UDim2.new(0, 42, 0, 42),
+            BackgroundColor3 = C.white, BackgroundTransparency = 0.88,
+        }, c)
+        corner(bubble, 13)
+        label({ Size = UDim2.new(1, 0, 1, 0), Text = "🎯", TextSize = 21, TextXAlignment = Center }, bubble)
+        label({
+            Position = UDim2.new(0, 66, 0, 14), Size = UDim2.new(1, -150, 0, 20),
+            Text = "Assist", Font = FONT_BOLD, TextSize = 16,
+        }, c)
+        heroSub = label({
+            Position = UDim2.new(0, 66, 0, 36), Size = UDim2.new(1, -150, 0, 16),
+            Text = "Off", TextSize = 11, TextColor3 = C.dim, TextTruncate = Enum.TextTruncate.AtEnd,
+        }, c)
+        local sw = makeSwitch(c)
+
+        setAssistVisual = function(on, instant)
+            sw.set(on, instant)
+            local bg = on and C.accent or C.white
+            local bgT = on and 0.84 or 0.9
+            local sc = on and C.accent or C.white
+            local sT = on and 0.45 or 0.88
+            if instant then
+                c.BackgroundColor3, c.BackgroundTransparency = bg, bgT
+                cStroke.Color, cStroke.Transparency = sc, sT
+            else
+                tween(c, 0.3, { BackgroundColor3 = bg, BackgroundTransparency = bgT })
+                tween(cStroke, 0.3, { Color = sc, Transparency = sT })
+            end
+        end
+        btn.Activated:Connect(function()
+            AssistSettings.Enabled = not AssistSettings.Enabled
+            setAssistVisual(AssistSettings.Enabled)
+        end)
     end
-end))
 
--- ==========================================
--- TIMESTAMP MACRO ENGINE
--- Every event has an absolute time (ms) from trigger. Each Heartbeat fires
--- all events that are due, so delays never accumulate and several events
--- can land in one frame. A down and its matching up never share a frame,
--- except 0ms taps, which fire together like the hardware macro does.
--- ==========================================
-local Engine = { run = nil, conn = nil }
+    -- Aim mode
+    local modeSeg, modeDesc
+    local readoutValues = {}
+    do
+        local _, c = makeItem(asf, 150, nextA())
+        label({
+            Position = UDim2.new(0, 14, 0, 11), Size = UDim2.new(1, -28, 0, 18),
+            Text = "Aim mode", Font = FONT_BOLD, TextSize = 13,
+        }, c)
+        modeSeg = segmented(c, UDim2.new(0, 12, 0, 36), UDim2.new(1, -24, 0, 34), AIM_MODES, function(i)
+            setMode(AIM_MODES[i])
+        end, 11)
+        modeDesc = label({
+            Position = UDim2.new(0, 14, 0, 78), Size = UDim2.new(1, -28, 0, 30),
+            Font = FONT_REG, TextSize = 11, TextColor3 = C.dim, TextWrapped = true,
+            TextYAlignment = Enum.TextYAlignment.Top,
+        }, c)
+        local row = frame({ Position = UDim2.new(0, 14, 0, 112), Size = UDim2.new(1, -28, 0, 32) }, c)
+        for i, name in ipairs({ "Strength", "Base lead", "Projectile", "Ping" }) do
+            local col = frame({ Position = UDim2.new((i - 1) / 4, 0, 0, 0), Size = UDim2.new(0.25, 0, 1, 0) }, row)
+            readoutValues[i] = label({
+                Size = UDim2.new(1, 0, 0, 17), Font = FONT_BOLD, TextSize = 13, TextColor3 = C.text,
+            }, col)
+            label({
+                Position = UDim2.new(0, 0, 0, 17), Size = UDim2.new(1, 0, 0, 13),
+                Text = name, Font = FONT_REG, TextSize = 10, TextColor3 = C.faint,
+            }, col)
+        end
+    end
 
-local function sendEvent(e, run)
-    pcall(function()
-        if e.kind == "key" then
-            VIM:SendKeyEvent(e.down, e.code, false, game)
+    refreshReadout = function()
+        local s = AssistSettings
+        modeDesc.Text = MODE_TEXT[s.Mode] or ""
+        readoutValues[1].Text = string.format("%d%%", math.floor(s.Smoothing * 100 + 0.5))
+        readoutValues[2].Text = string.format("%.2fs", s.Prediction)
+        readoutValues[3].Text = s.ProjectileSpeed > 0 and tostring(math.floor(s.ProjectileSpeed + 0.5)) or "Off"
+        readoutValues[4].Text = s.PingComp and "On" or "Off"
+    end
+
+    -- Mode-specific controls (collapse away when they don't apply)
+    local strength = makeSlider(asf, nextA(), {
+        label = "Strength", sub = "How closely the aim point follows the target. At 100% it has no lag.",
+        min = 0.05, max = 1, initial = AssistSettings.CustomSmoothing,
+        fmt = function(v) return string.format("%d%%", math.floor(v * 100 + 0.5)) end,
+        onChange = function(v)
+            AssistSettings.CustomSmoothing = v
+            AssistSettings.Smoothing = v
+            refreshReadout()
+        end,
+    })
+    local prediction = makeSlider(asf, nextA(), {
+        label = "Prediction", sub = "How far ahead of a moving target to aim, in seconds.",
+        min = 0, max = 0.5, initial = AssistSettings.CustomPrediction,
+        fmt = function(v) return string.format("%.2fs", v) end,
+        onChange = function(v)
+            AssistSettings.CustomPrediction = v
+            AssistSettings.Prediction = v
+            refreshReadout()
+        end,
+    })
+    local projectile = makeSlider(asf, nextA(), {
+        label = "Projectile speed", sub = "Studs per second. Far targets get extra lead. Off means instant hits.",
+        min = 0, max = 600, initial = AssistSettings.CustomProjectileSpeed,
+        fmt = function(v) return v < 5 and "Off" or tostring(math.floor(v + 0.5)) end,
+        onChange = function(v)
+            local val = (v < 5) and 0 or math.floor(v + 0.5)
+            if AssistSettings.Mode == "Smart" then
+                AssistSettings.SmartProjectileSpeed = val
+            elseif AssistSettings.Mode == "Custom" then
+                AssistSettings.CustomProjectileSpeed = val
+            end
+            AssistSettings.ProjectileSpeed = val
+            refreshReadout()
+        end,
+    })
+    local pingItem, pingCard = makeItem(asf, 60, nextA())
+    local pingSwitch = makeSwitch(pingCard)
+    do
+        local btn = hit({ Size = UDim2.new(1, 0, 1, 0) }, pingCard)
+        pressable(btn, pingCard, 0.975)
+        label({
+            Position = UDim2.new(0, 14, 0, 11), Size = UDim2.new(1, -90, 0, 18),
+            Text = "Ping compensation", Font = FONT_BOLD, TextSize = 13,
+        }, pingCard)
+        label({
+            Position = UDim2.new(0, 14, 0, 31), Size = UDim2.new(1, -90, 0, 16),
+            Text = "Adds your ping to the lead.", Font = FONT_REG, TextSize = 10, TextColor3 = C.faint,
+        }, pingCard)
+        btn.Activated:Connect(function()
+            local v = not pingSwitch.get()
+            pingSwitch.set(v)
+            AssistSettings.CustomPingComp = v
+            AssistSettings.PingComp = v
+            refreshReadout()
+        end)
+    end
+    local strengthC, predictionC = collapsible(strength.item, 92), collapsible(prediction.item, 92)
+    local projectileC, pingC = collapsible(projectile.item, 92), collapsible(pingItem, 68)
+
+    setMode = function(name, instant)
+        applyAimMode(name)
+        for i, m in ipairs(AIM_MODES) do
+            if m == name then modeSeg.set(i, instant) end
+        end
+        if name == "Custom" then
+            strength.set(AssistSettings.CustomSmoothing)
+            prediction.set(AssistSettings.CustomPrediction)
+            projectile.set(AssistSettings.CustomProjectileSpeed)
+            pingSwitch.set(AssistSettings.CustomPingComp, true)
+        elseif name == "Smart" then
+            projectile.set(AssistSettings.SmartProjectileSpeed)
+        end
+        local custom, smart = (name == "Custom"), (name == "Smart")
+        strengthC.set(custom, instant)
+        predictionC.set(custom, instant)
+        projectileC.set(custom or smart, instant)
+        pingC.set(custom, instant)
+        refreshReadout()
+    end
+
+    -- Target picker: < Auto (Closest) >
+    local targetName
+    do
+        local _, c = makeItem(asf, 58, nextA())
+        label({
+            Position = UDim2.new(0, 14, 0, 0), Size = UDim2.new(0, 70, 1, 0),
+            Text = "Target", Font = FONT_BOLD, TextSize = 13,
+        }, c)
+        local ctl = frame({
+            AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -12, 0.5, 0), Size = UDim2.new(0, 214, 0, 36),
+            BackgroundColor3 = C.white, BackgroundTransparency = 0.92,
+        }, c)
+        corner(ctl, "pill")
+        stroke(ctl, C.white, 1, 0.9)
+        local prevB = hit({
+            Size = UDim2.new(0, 36, 1, 0), Text = "<", Font = FONT_BOLD, TextSize = 15, TextColor3 = C.accent,
+        }, ctl)
+        targetName = hit({
+            Position = UDim2.new(0, 36, 0, 0), Size = UDim2.new(1, -72, 1, 0), Text = AssistSettings.TargetPlayer,
+            Font = FONT_BOLD, TextSize = 12, TextColor3 = C.text, TextTruncate = Enum.TextTruncate.AtEnd,
+        }, ctl)
+        local nextB = hit({
+            AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 0), Size = UDim2.new(0, 36, 1, 0),
+            Text = ">", Font = FONT_BOLD, TextSize = 15, TextColor3 = C.accent,
+        }, ctl)
+        local function cycle(dir)
+            local names = { "Auto (Closest)" }
+            for _, plr in ipairs(Players:GetPlayers()) do
+                if plr ~= p then table.insert(names, plr.Name) end
+            end
+            local idx = table.find(names, AssistSettings.TargetPlayer) or 1
+            AssistSettings.TargetPlayer = names[((idx - 1 + dir) % #names) + 1]
+            targetName.Text = AssistSettings.TargetPlayer
+        end
+        prevB.Activated:Connect(function() cycle(-1) end)
+        nextB.Activated:Connect(function() cycle(1) end)
+        targetName.Activated:Connect(function() cycle(1) end)
+    end
+
+    do -- Sensitivity (how far from the crosshair a target can be and still be picked)
+        local _, c = makeItem(asf, 98, nextA())
+        label({
+            Position = UDim2.new(0, 14, 0, 11), Size = UDim2.new(1, -28, 0, 18),
+            Text = "Sensitivity", Font = FONT_BOLD, TextSize = 13,
+        }, c)
+        label({
+            Position = UDim2.new(0, 14, 0, 30), Size = UDim2.new(1, -28, 0, 26),
+            Text = "How far from your crosshair a target can be and still be picked, in pixels.",
+            Font = FONT_REG, TextSize = 10, TextColor3 = C.faint, TextWrapped = true,
+            TextYAlignment = Enum.TextYAlignment.Top,
+        }, c)
+        local names = {}
+        for i, v in ipairs(AssistSettings.RadiusPresets) do
+            names[i] = (v > 5000) and "Max" or tostring(v)
+        end
+        local seg = segmented(c, UDim2.new(0, 12, 0, 58), UDim2.new(1, -24, 0, 30), names, function(i)
+            AssistSettings.Effectiveness = AssistSettings.RadiusPresets[i]
+        end, 11)
+        seg.set(table.find(AssistSettings.RadiusPresets, AssistSettings.Effectiveness) or 3, true)
+    end
+
+    do -- Aim marker toggle
+        local _, c = makeItem(asf, 60, nextA())
+        local btn = hit({ Size = UDim2.new(1, 0, 1, 0) }, c)
+        pressable(btn, c, 0.975)
+        label({
+            Position = UDim2.new(0, 14, 0, 11), Size = UDim2.new(1, -90, 0, 18),
+            Text = "Aim marker", Font = FONT_BOLD, TextSize = 13,
+        }, c)
+        label({
+            Position = UDim2.new(0, 14, 0, 31), Size = UDim2.new(1, -90, 0, 16),
+            Text = "Draws a ring where Assist is aiming.", Font = FONT_REG, TextSize = 10, TextColor3 = C.faint,
+        }, c)
+        local sw = makeSwitch(c)
+        sw.set(AssistSettings.ShowMarker, true)
+        btn.Activated:Connect(function()
+            AssistSettings.ShowMarker = not AssistSettings.ShowMarker
+            sw.set(AssistSettings.ShowMarker)
+        end)
+    end
+
+    -- ---------- Slot setup panel (floating, draggable, with its own close button) ----------
+    local panelY = 58
+    local groupLayout = {}
+    for _, group in ipairs(SlotInfo) do
+        groupLayout[#groupLayout + 1] = panelY
+        panelY = panelY + 40 + #group.rows * 36 + 6 + 12
+    end
+    local PANEL_H = panelY + 2
+
+    local panel = frame({
+        Name = "SlotPanel", AnchorPoint = Vector2.new(0.5, 0.5),
+        Size = UDim2.new(0, PANEL_W, 0, PANEL_H), Position = UDim2.new(0, 700, 0, 300),
+        Visible = false, ZIndex = 20,
+    }, sg)
+    local panelFit = Instance.new("UIScale")
+    panelFit.Parent = panel
+    local gp = glassCard(panel, 24)
+    local pcard = gp.card
+
+    label({
+        Position = UDim2.new(0, 20, 0, 14), Size = UDim2.new(1, -90, 0, 24),
+        Text = "Slot setup", Font = FONT_BOLD, TextSize = 17,
+    }, pcard)
+    label({
+        Position = UDim2.new(0, 20, 0, 36), Size = UDim2.new(1, -90, 0, 14),
+        Text = "Put each item in the slot shown.", TextSize = 11, TextColor3 = C.faint,
+    }, pcard)
+    local panelHandle = hit({ Size = UDim2.new(1, -60, 0, 56) }, pcard)
+    makeDraggable(panelHandle, panel, 80)
+    closeButton(pcard, UDim2.new(1, -31, 0, 30), function() panelPopup.set(false) end)
+
+    for gi, group in ipairs(SlotInfo) do
+        local gy = groupLayout[gi]
+        local gcolor = (gi == 1) and C.accent or C.accent2
+        label({
+            Position = UDim2.new(0, 20, 0, gy), Size = UDim2.new(1, -40, 0, 20),
+            Text = group.heading, Font = FONT_BOLD, TextSize = 13, TextColor3 = gcolor,
+        }, pcard)
+        label({
+            Position = UDim2.new(0, 20, 0, gy + 20), Size = UDim2.new(1, -40, 0, 16),
+            Text = group.subtitle, TextSize = 10, TextColor3 = C.faint,
+        }, pcard)
+        for ri, entry in ipairs(group.rows) do
+            local ry = gy + 40 + (ri - 1) * 36
+            local badge = frame({
+                Position = UDim2.new(0, 20, 0, ry + 2), Size = UDim2.new(0, 28, 0, 28),
+                BackgroundColor3 = gcolor, BackgroundTransparency = 0.78,
+            }, pcard)
+            corner(badge, 9)
+            stroke(badge, gcolor, 1, 0.5)
+            label({
+                Size = UDim2.new(1, 0, 1, 0), Text = entry.slot, Font = FONT_BOLD, TextSize = 14,
+                TextColor3 = gcolor, TextXAlignment = Center,
+            }, badge)
+            label({
+                Position = UDim2.new(0, 58, 0, ry), Size = UDim2.new(1, -78, 0, 32),
+                Text = entry.item, TextSize = 12, TextWrapped = true,
+            }, pcard)
+        end
+        if gi < #SlotInfo then
+            frame({
+                Position = UDim2.new(0, 20, 0, gy + 40 + #group.rows * 36 + 4), Size = UDim2.new(1, -40, 0, 1),
+                BackgroundColor3 = C.white, BackgroundTransparency = 0.88,
+            }, pcard)
+        end
+    end
+
+    -- ---------- Placement ----------
+    local function winSize() return WIN_W * fit.Scale, WIN_H * fit.Scale end
+    local function panelSize() return PANEL_W * panelFit.Scale, PANEL_H * panelFit.Scale end
+
+    local function clampWindow()
+        local vp = viewport()
+        local w, h = winSize()
+        local cx = math.clamp(win.Position.X.Offset, 90 - w / 2, vp.X - 90 + w / 2)
+        local cy = math.clamp(win.Position.Y.Offset, 90 - h / 2, vp.Y - 90 + h / 2)
+        win.Position = UDim2.new(0, cx, 0, cy)
+    end
+
+    local function refit()
+        local vp = viewport()
+        fit.Scale = math.clamp(math.min((vp.X - 24) / WIN_W, (vp.Y - 24) / WIN_H), 0.5, 1.2)
+        panelFit.Scale = math.clamp(math.min((vp.X - 24) / PANEL_W, (vp.Y - 24) / PANEL_H), 0.5, 1.2)
+        clampWindow()
+    end
+
+    -- Open the panel beside the window (right, else left, else centered), top-aligned.
+    local function placePanel()
+        local vp = viewport()
+        local w, h = winSize()
+        local pw, ph = panelSize()
+        local wx, wy = win.Position.X.Offset, win.Position.Y.Offset
+        local gap = 14
+        local cx
+        if wx + w / 2 + gap + pw <= vp.X - 8 then
+            cx = wx + w / 2 + gap + pw / 2
+        elseif wx - w / 2 - gap - pw >= 8 then
+            cx = wx - w / 2 - gap - pw / 2
         else
-            if e.down then
-                local x, y
-                if e.aim and AssistSettings.Enabled and currentBestTarget then
-                    x, y = currentBestTarget.X, currentBestTarget.Y
-                else
-                    local l = UIS:GetMouseLocation()
-                    x, y = l.X, l.Y
-                end
-                run.pos[e.id] = { x, y }
-            end
-            local pos = run.pos[e.id]
-            VIM:SendMouseButtonEvent(pos[1], pos[2], e.code, e.down, game, 0)
+            cx = vp.X / 2
+        end
+        local cy = math.clamp(wy - h / 2 + ph / 2, ph / 2 + 8, math.max(ph / 2 + 8, vp.Y - ph / 2 - 8))
+        panel.Position = UDim2.new(0, cx, 0, cy)
+    end
+
+    windowPopup = makePopup(gw, win)
+    panelPopup = makePopup(gp, panel, function(open)
+        if open then placePanel() end
+        safeUI("panelState", open)
+    end)
+
+    -- ---------- Floating button (draggable) ----------
+    local orb = frame({
+        Name = "Orb", AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.new(0, 52, 0, 52),
+        Position = UDim2.new(0, 42, 0, 300), ZIndex = 5,
+    }, sg)
+    addShadow(orb, 26).show(0.4)
+    local orbFace = frame({ Size = UDim2.new(1, 0, 1, 0), BackgroundColor3 = C.white, BackgroundTransparency = 0 }, orb)
+    corner(orbFace, "pill")
+    gradient(orbFace, { Color = cseq(C.tintTop, C.tintBot), Transparency = nseq(0.1, 0.28), Rotation = 90 })
+    local orbRim = stroke(orbFace, C.white, 1.5, 0)
+    gradient(orbRim, { Transparency = nseq(0.2, 0.8, 0.35), Rotation = 45 })
+    label({ Size = UDim2.new(1, 0, 1, 0), Text = "⚙️", TextSize = 22, TextXAlignment = Center }, orb)
+    local orbBtn = hit({ Size = UDim2.new(1, 0, 1, 0), ZIndex = 3 }, orb)
+    local orbDrag = makeDraggable(orbBtn, orb, 52)
+    pressable(orbBtn, orb, 0.9)
+    orbBtn.Activated:Connect(function()
+        if orbDrag.moved then return end -- that tap was the end of a drag
+        local open = not windowPopup.isOpen()
+        if not open then panelPopup.set(false) end
+        windowPopup.set(open)
+    end)
+
+    -- ---------- Slot warning toast ----------
+    -- One CanvasGroup fades as a single piece, so the background and its text can never end
+    -- up at different transparencies. Nothing here uses per-label transparency at all.
+    local function showSlotWarning()
+        local TW, TH = 324, 92
+        local t = Instance.new("CanvasGroup")
+        t.Name = "SlotWarning"
+        t.AnchorPoint = Vector2.new(0.5, 0)
+        t.Position = UDim2.new(0.5, 0, 0.06, -18)
+        t.Size = UDim2.new(0, TW, 0, TH)
+        t.BackgroundTransparency = 1
+        t.BorderSizePixel = 0
+        t.GroupTransparency = 1
+        t.ZIndex = 100
+        t.Parent = sg
+        corner(t, 18)
+
+        local body = frame({ Size = UDim2.new(1, 0, 1, 0), BackgroundColor3 = C.white, BackgroundTransparency = 0 }, t)
+        corner(body, 18)
+        gradient(body, {
+            Color = cseq(Color3.fromRGB(48, 44, 58), Color3.fromRGB(22, 22, 34)),
+            Transparency = nseq(0.04, 0.1), Rotation = 90,
+        })
+        local wash = frame({ Size = UDim2.new(1, 0, 1, 0), BackgroundColor3 = C.warn, BackgroundTransparency = 0 }, t)
+        corner(wash, 18)
+        gradient(wash, { Transparency = nseq(0.82, 1), Rotation = 20 })
+
+        label({
+            Position = UDim2.new(0, 16, 0, 10), Size = UDim2.new(1, -32, 0, 20),
+            Text = "⚠️ Check Your Slots", Font = FONT_BOLD, TextSize = 14, TextColor3 = C.warn,
+        }, t)
+        label({
+            Position = UDim2.new(0, 16, 0, 31), Size = UDim2.new(1, -32, 0, 32),
+            Text = "Put every weapon in the slot shown, or the macro won't work right.",
+            Font = FONT_REG, TextSize = 12, TextColor3 = C.white, TextWrapped = true,
+            TextYAlignment = Enum.TextYAlignment.Top,
+        }, t)
+        label({
+            Position = UDim2.new(0, 16, 0, 65), Size = UDim2.new(1, -32, 0, 12),
+            Text = "Tap for Slot Setup", TextSize = 10, TextColor3 = C.dim,
+        }, t)
+
+        local barTrack = frame({
+            Position = UDim2.new(0, 16, 1, -8), Size = UDim2.new(1, -32, 0, 3),
+            BackgroundColor3 = C.white, BackgroundTransparency = 0.88,
+        }, t)
+        corner(barTrack, "pill")
+        local barFill = frame({ Size = UDim2.new(1, 0, 1, 0), BackgroundColor3 = C.warn, BackgroundTransparency = 0 }, barTrack)
+        corner(barFill, "pill")
+
+        local rim = frame({ Position = UDim2.new(0, 1, 0, 1), Size = UDim2.new(1, -2, 1, -2), ZIndex = 50 }, t)
+        corner(rim, 17)
+        stroke(rim, C.warn, 1.5, 0.1)
+
+        local tap = hit({ Size = UDim2.new(1, 0, 1, 0), ZIndex = 60 }, t)
+
+        pcall(function()
+            local sound = Instance.new("Sound")
+            sound.SoundId = "rbxasset://sounds/electronicpingshort.wav"
+            sound.Volume = 0.5
+            sound.Parent = t
+            sound:Play()
+        end)
+
+        local dismissed = false
+        local function dismiss()
+            if dismissed then return end
+            dismissed = true
+            tween(t, 0.35, { GroupTransparency = 1, Position = UDim2.new(0.5, 0, 0.06, -12) }, ES.Quad, ED.In)
+            task.delay(0.42, function() t:Destroy() end)
+        end
+        tap.Activated:Connect(function()
+            panelPopup.set(true)
+            dismiss()
+        end)
+
+        tween(t, 0.45, { GroupTransparency = 0, Position = UDim2.new(0.5, 0, 0.06, 0) })
+        tween(barFill, 5, { Size = UDim2.new(0, 0, 1, 0) }, ES.Linear)
+        task.delay(0.5, function() -- guarantee the final fully-visible state even if the tween was interrupted
+            if not dismissed then t.GroupTransparency = 0 end
+        end)
+        task.delay(5.5, dismiss)
+    end
+
+    -- ---------- Live status + marker ----------
+    local lastStatus = nil
+    local function refreshStatus()
+        local s = AssistSettings
+        local text, locked
+        if not s.Enabled then
+            text = "Off"
+        elseif lockedPlayer and currentBestTarget then
+            locked = true
+            local extra = ""
+            local ok, d = pcall(function()
+                local theirs = lockedPlayer.Character and lockedPlayer.Character:FindFirstChild("HumanoidRootPart")
+                local mine = p.Character and p.Character:FindFirstChild("HumanoidRootPart")
+                return theirs and mine and (theirs.Position - mine.Position).Magnitude
+            end)
+            if ok and d then extra = string.format(", %d studs", math.floor(d + 0.5)) end
+            text = "Locked on " .. lockedPlayer.Name .. extra
+        else
+            text = "Searching for a target"
+        end
+        if text ~= lastStatus then
+            lastStatus = text
+            heroSub.Text = text
+            heroSub.TextColor3 = locked and C.accent or C.dim
+        end
+    end
+
+    task.spawn(function()
+        while Alive.v do
+            refreshStatus()
+            task.wait(0.12)
         end
     end)
-    run.held[e.id] = e.down and e or nil
-end
 
-local function releaseHeld(run)
-    for id, e in pairs(run.held) do
-        sendEvent({ kind = e.kind, code = e.code, down = false, id = id }, run)
-    end
-    run.held = {}
-end
+    keep(RunService.RenderStepped:Connect(function()
+        local s = AssistSettings
+        if s.ShowMarker and s.Enabled and currentBestTarget then
+            marker.Position = UDim2.new(0, currentBestTarget.X, 0, currentBestTarget.Y)
+            marker.Visible = true
+        elseif marker.Visible then
+            marker.Visible = false
+        end
+    end))
 
-local function stopEngine()
-    if Engine.conn then
-        Engine.conn:Disconnect()
-        Engine.conn = nil
-    end
-    local run = Engine.run
-    Engine.run = nil
-    if run then releaseHeld(run) end
-end
-
-local function stepEngine()
-    local run = Engine.run
-    if not run then return end
-
-    local now = (clock() - run.t0) * 1000
-    local downThisFrame = {}
-    local events = run.events
-
-    while run.i <= #events do
-        local e = events[run.i]
-        if e.t > now then break end
-        if not e.down and not e.instant and downThisFrame[e.id] then break end -- push up to next frame (0ms taps excepted)
-        sendEvent(e, run)
-        if e.down then downThisFrame[e.id] = true end
-        run.i = run.i + 1
-    end
-
-    if run.i > #events then
-        stopEngine()
-    end
-end
-
-local function startSequence(events)
-    stopEngine() -- retrigger = clean restart, held inputs released first
-    Engine.run = { events = events, i = 1, t0 = clock(), held = {}, pos = {} }
-    Engine.conn = RunService.Heartbeat:Connect(stepEngine)
-    stepEngine() -- fire first event immediately, zero added latency
-end
-
--- Sequence builder: each step is down at cursor, up at cursor+hold,
--- next step at cursor+hold+gap (times in ms).
-local function newSeq()
-    local s = { events = {}, t = 0, n = 0 }
-    local function add(kind, code, hold, gap, aim)
-        s.n = s.n + 1
-        table.insert(s.events, { t = s.t, kind = kind, code = code, down = true, id = s.n, aim = aim })
-        table.insert(s.events, { t = s.t + hold, kind = kind, code = code, down = false, id = s.n, instant = (hold == 0) })
-        s.t = s.t + hold + (gap or 0)
-        return s
-    end
-    function s.key(code, hold, gap) return add("key", code, hold, gap) end
-    function s.click(hold, gap, aim) return add("mouse", 0, hold, gap, aim) end
-    function s.mouse(btn, hold, gap) return add("mouse", btn, hold, gap) end
-    return s
-end
-
--- What the player should have equipped in each numbered slot, grouped by why it matters:
--- "Weapons" are what each macro equips and fires; "Combo Slots" are the extra gear the
--- Board Combo swings through on top of the Loveboard.
-local SlotInfo = {
-    {
-        heading = "⚔️ Weapons",
-        subtitle = "Must be in the exact slot",
-        rows = {
-            { slot = "5", item = "RPG" },
-            { slot = "6", item = "Loveboard" },
-            { slot = "7", item = "Golden Snowball Launcher" },
-            { slot = "9", item = "Normal Snowball Launcher" },
-        },
-    },
-    {
-        heading = "🥊 Combo Slots",
-        subtitle = "Needed for the Board Combo",
-        rows = {
-            { slot = "1", item = "Taser" },
-            { slot = "4", item = "Yin & Yang (preferred) / Pink Stop Sign" },
-            { slot = "8", item = "Fist / Brass Knuckles (preferred)" },
-            { slot = "0", item = "Parasol / Slasher Claws (preferred)" },
-        },
-    },
-}
-
--- Synapse's slot 4 step is a "Double Click": two quick left clicks. The XML doesn't record
--- how fast Razer's double click is, so each of the two clicks is held this many ms.
--- If the slot 4 weapon still doesn't hit, try raising it (10, 15, 20).
-local DoubleClickMs = 8
-
--- Board combo: built event-for-event from the Razer Synapse XML (114ms + the double click).
--- Args are hold (ms between down and up) then gap (ms of delay after the up).
--- A hold of 0 is an instant tap, exactly as the XML has it.
-local BoardSeq = newSeq()
-    .key(KC.One, 0)
-    .click(12)
-    .click(12)
-    .key(KC.Four, 0)
-    .click(DoubleClickMs)     -- Double Click: first click
-    .click(DoubleClickMs, 20) -- Double Click: second click, then the XML's 20ms delay
-    .key(KC.Eight, 0)
-    .click(20)
-    .click(20)
-    .click(10)
-    .key(KC.Zero, 0)
-    .click(10, 10)
-    .key(KC.Six, 0)
-    .click(0)
-    .events
-
-local SnowballSeq = newSeq()
-    .key(KC.Seven, 10)
-    .click(10, 20, true)
-    .key(KC.Nine, 10)
-    .click(10, 20, true)
-    .key(KC.Six, 10)
-    .click(10, 0, true)
-    .events
-
-local RpgSeq = newSeq()
-    .key(KC.Five, 10, 100)
-    .click(10, 20)
-    .key(KC.R, 10)
-    .key(KC.Six, 10)
-    .click(10)
-    .events
-
-local Macros = {
-    Snowball = function() startSequence(SnowballSeq) end,
-    Board    = function() startSequence(BoardSeq) end,
-    RPG      = function() startSequence(RpgSeq) end,
-}
-
--- ==========================================
--- TRIGGERS + HOTKEYS
--- Registered here (not inside the UI builder) so hotkeys work no matter what.
--- ==========================================
-local listeningMacro = nil
-local hasShownSlotWarning = false -- only the very first macro trigger (any of the 3) shows the warning
-
-local function triggerMacro(name)
-    if not hasShownSlotWarning then
-        hasShownSlotWarning = true
-        safeUI("slotWarning")
-    end
-    local fn = Macros[name]
-    if fn then fn() end
-    safeUI("flash", name)
-end
-
-keep(UIS.InputBegan:Connect(function(input, gpe)
-    local k = input.KeyCode
-    if k == KC.Unknown then return end
-    if gpe and input.UserInputType == Enum.UserInputType.Keyboard then return end
-
-    if listeningMacro then
-        local name = listeningMacro
-        listeningMacro = nil
-        Config[name].Key = k
-        saveKeybinds()
-        safeUI("keyBound", name)
-        return
-    end
-
-    for name, info in pairs(Config) do
-        -- Thumbstick1 is an axis and never fires InputBegan; a stick click is ButtonL3
-        if k == info.Key or (info.Key == KC.Thumbstick1 and k == KC.ButtonL3) then
-            triggerMacro(name)
-            break
+    -- ---------- Hooks the macro/hotkey code calls ----------
+    UI.slotWarning = showSlotWarning
+    UI.keyBound = refreshChips
+    UI.targetChanged = function() targetName.Text = AssistSettings.TargetPlayer end
+    UI.flash = function(name)
+        local g = glows[name]
+        if g then
+            g.BackgroundTransparency = 0.72
+            tween(g, 0.7, { BackgroundTransparency = 1 })
         end
     end
-end))
+
+    -- ---------- Go ----------
+    sg.Parent = core
+    refit()
+    keep(sg:GetPropertyChangedSignal("AbsoluteSize"):Connect(refit))
+
+    do -- first placement: just right of the floating button, vertically centered
+        local vp = viewport()
+        local w, h = winSize()
+        orb.Position = UDim2.new(0, 42, 0, math.floor(vp.Y * 0.4))
+        win.Position = UDim2.new(0, 42 + 26 + 14 + w / 2, 0, vp.Y / 2)
+        clampWindow()
+    end
+
+    tabs.set(1, true)
+    showPage(1, true)
+    setAssistVisual(false, true)
+    setMode("Classic", true)
+    refreshChips()
+    windowPopup.set(true)
+end
