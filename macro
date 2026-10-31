@@ -61,8 +61,14 @@ local AssistSettings = {
     Enabled = false,
     TargetPlayer = "Auto (Closest)",
     Effectiveness = 400,
+    -- Smoothing/Prediction are the LIVE values the RenderStepped loop below reads every
+    -- frame. Classic and Aggressive overwrite them with fixed numbers when selected;
+    -- Custom overwrites them from CustomSmoothing/CustomPrediction, which the sliders
+    -- edit directly, so dragging a slider changes real behavior immediately.
     Smoothing = 0.6,
     Prediction = 0.12,
+    CustomSmoothing = 0.6,  -- Custom mode's own stored strength, starts equal to Classic
+    CustomPrediction = 0.12, -- Custom mode's own stored prediction, starts equal to Classic
     RadiusPresets = { 150, 250, 400, 600, 9999 },
 }
 
@@ -342,6 +348,7 @@ pcall(function()
     local sg = Instance.new("ScreenGui")
     sg.Name = "ExoticaMasterSuite"
     sg.ResetOnSpawn = false
+    sg.DisplayOrder = 999999999 -- always render above other game UI (shops, spin wheels, event popups)
     sg.Parent = core
 
     -- Toggle button
@@ -362,7 +369,7 @@ pcall(function()
 
     -- Main frame
     local f = Instance.new("Frame", sg)
-    f.Size = UDim2.new(0, 260, 0, 400) -- tall enough for all 7 rows (3 macros + Assist + Target + Sensitivity + Slots)
+    f.Size = UDim2.new(0, 260, 0, 460) -- fits most rows at once; the rest scroll, see container below
     f.Position = UDim2.new(0.02, 55, 0.28, 0)
     f.BackgroundColor3 = COLORS.panel
     f.BackgroundTransparency = 0.08
@@ -393,10 +400,18 @@ pcall(function()
     subtitle.TextColor3 = Color3.fromRGB(140, 140, 170)
     subtitle.TextSize = 10
 
-    local container = Instance.new("Frame", f)
+    -- Scrolling instead of a plain Frame: AutomaticCanvasSize reads the UIListLayout's
+    -- content height on its own, so adding or hiding rows (like the Custom-mode sliders)
+    -- never needs this height hand-recomputed or risks a row poking out past the bottom.
+    local container = Instance.new("ScrollingFrame", f)
     container.Size = UDim2.new(1, -20, 1, -60)
     container.Position = UDim2.new(0, 10, 0, 52)
     container.BackgroundTransparency = 1
+    container.BorderSizePixel = 0
+    container.ScrollBarThickness = 4
+    container.ScrollBarImageColor3 = COLORS.accent
+    container.CanvasSize = UDim2.new(1, 0, 0, 0) -- full width, no horizontal scroll; AutomaticCanvasSize fills in the height
+    container.AutomaticCanvasSize = Enum.AutomaticCanvasSize.Y
     local layout = Instance.new("UIListLayout", container)
     layout.SortOrder = Enum.SortOrder.LayoutOrder
     layout.Padding = UDim.new(0, 8)
@@ -434,6 +449,102 @@ pcall(function()
         return label, btn
     end
 
+    -- A full-width row with a label, a live value readout, and a draggable track.
+    -- onChange fires with the new value on every drag update (press, move, release).
+    local function makeSlider(labelText, min, max, initial, formatFn, onChange)
+        local row = Instance.new("Frame", container)
+        row.Size = UDim2.new(1, 0, 0, 52)
+        row.BackgroundColor3 = COLORS.row
+        row.BackgroundTransparency = 0.2
+        row.BorderSizePixel = 0
+        corner(row, 10)
+
+        local topLabel = Instance.new("TextLabel", row)
+        topLabel.Size = UDim2.new(0.6, 0, 0, 18)
+        topLabel.Position = UDim2.new(0, 10, 0, 5)
+        topLabel.BackgroundTransparency = 1
+        topLabel.Font = Enum.Font.GothamBold
+        topLabel.TextXAlignment = Enum.TextXAlignment.Left
+        topLabel.TextColor3 = Color3.fromRGB(240, 240, 240)
+        topLabel.TextSize = 12
+        topLabel.Text = labelText
+
+        local valueLabel = Instance.new("TextLabel", row)
+        valueLabel.Size = UDim2.new(0.35, 0, 0, 18)
+        valueLabel.Position = UDim2.new(0.65, -10, 0, 5)
+        valueLabel.BackgroundTransparency = 1
+        valueLabel.Font = Enum.Font.GothamBold
+        valueLabel.TextXAlignment = Enum.TextXAlignment.Right
+        valueLabel.TextColor3 = COLORS.accent
+        valueLabel.TextSize = 12
+        valueLabel.Text = formatFn(initial)
+
+        local track = Instance.new("Frame", row)
+        track.Size = UDim2.new(1, -20, 0, 8)
+        track.Position = UDim2.new(0, 10, 0, 32)
+        track.BackgroundColor3 = COLORS.btn
+        track.BorderSizePixel = 0
+        corner(track, 4)
+
+        local startFrac = math.clamp((initial - min) / (max - min), 0, 1)
+
+        local fill = Instance.new("Frame", track)
+        fill.Size = UDim2.new(startFrac, 0, 1, 0)
+        fill.BackgroundColor3 = COLORS.accent
+        fill.BorderSizePixel = 0
+        corner(fill, 4)
+
+        local handle = Instance.new("Frame", track)
+        handle.Size = UDim2.new(0, 14, 0, 14)
+        handle.AnchorPoint = Vector2.new(0.5, 0.5)
+        handle.Position = UDim2.new(startFrac, 0, 0.5, 0)
+        handle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        handle.BorderSizePixel = 0
+        corner(handle, 7)
+
+        -- Moves the fill/handle/label to match a value and reports it, without
+        -- being dragged — used to sync the slider when a mode preset is applied.
+        local function setValue(value)
+            local frac = math.clamp((value - min) / (max - min), 0, 1)
+            fill.Size = UDim2.new(frac, 0, 1, 0)
+            handle.Position = UDim2.new(frac, 0, 0.5, 0)
+            valueLabel.Text = formatFn(value)
+        end
+
+        local function setFromX(absX)
+            local trackPos, trackSize = track.AbsolutePosition.X, track.AbsoluteSize.X
+            if trackSize <= 0 then return end
+            local frac = math.clamp((absX - trackPos) / trackSize, 0, 1)
+            local value = min + frac * (max - min)
+            fill.Size = UDim2.new(frac, 0, 1, 0)
+            handle.Position = UDim2.new(frac, 0, 0.5, 0)
+            valueLabel.Text = formatFn(value)
+            onChange(value)
+        end
+
+        local dragging = false
+        track.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                dragging = true
+                container.ScrollingEnabled = false -- so dragging the slider doesn't also scroll the list
+                setFromX(input.Position.X)
+            end
+        end)
+        UIS.InputChanged:Connect(function(input)
+            if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+                setFromX(input.Position.X)
+            end
+        end)
+        UIS.InputEnded:Connect(function(input)
+            if dragging and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
+                dragging = false
+                container.ScrollingEnabled = true
+            end
+        end)
+
+        return row, setValue
+    end
+
     -- Macro rows
     local keyButtons = {}
     for _, name in ipairs({ "Snowball", "Board", "RPG" }) do
@@ -453,6 +564,59 @@ pcall(function()
         AssistSettings.Enabled = not AssistSettings.Enabled
         aimBtn.Text = AssistSettings.Enabled and "ON" or "OFF"
         aimBtn.BackgroundColor3 = AssistSettings.Enabled and Color3.fromRGB(0, 150, 100) or Color3.fromRGB(150, 50, 50)
+    end)
+
+    -- Aim Mode: Classic keeps the original numbers untouched. Aggressive is a fixed,
+    -- deliberately strong preset for testing — near-instant lock, long lead. Custom
+    -- hands the two values to the sliders below, which edit them live.
+    local AIM_PRESETS = {
+        Classic    = { Smoothing = 0.6,  Prediction = 0.12 },
+        Aggressive = { Smoothing = 0.95, Prediction = 0.3 },
+    }
+    local AIM_MODES = { "Classic", "Aggressive", "Custom" }
+
+    local _, modeBtn = makeRow("⚡ Aim Mode", "Classic")
+
+    local strengthRow, setStrengthSlider = makeSlider(
+        "💪 Strength", 0.05, 1, AssistSettings.CustomSmoothing,
+        function(v) return string.format("%d%%", math.floor(v * 100 + 0.5)) end,
+        function(v)
+            AssistSettings.CustomSmoothing = v
+            AssistSettings.Smoothing = v
+        end
+    )
+    local predictionRow, setPredictionSlider = makeSlider(
+        "🔮 Prediction", 0, 0.5, AssistSettings.CustomPrediction,
+        function(v) return string.format("%.2fs", v) end,
+        function(v)
+            AssistSettings.CustomPrediction = v
+            AssistSettings.Prediction = v
+        end
+    )
+    strengthRow.Visible = false
+    predictionRow.Visible = false
+
+    local modeIndex = 1
+    local function applyAimMode(name)
+        local preset = AIM_PRESETS[name]
+        if preset then
+            AssistSettings.Smoothing = preset.Smoothing
+            AssistSettings.Prediction = preset.Prediction
+        else -- Custom
+            AssistSettings.Smoothing = AssistSettings.CustomSmoothing
+            AssistSettings.Prediction = AssistSettings.CustomPrediction
+            setStrengthSlider(AssistSettings.CustomSmoothing)
+            setPredictionSlider(AssistSettings.CustomPrediction)
+        end
+        strengthRow.Visible = (name == "Custom")
+        predictionRow.Visible = (name == "Custom")
+    end
+
+    modeBtn.Activated:Connect(function()
+        modeIndex = (modeIndex % #AIM_MODES) + 1
+        local name = AIM_MODES[modeIndex]
+        modeBtn.Text = name
+        applyAimMode(name)
     end)
 
     -- Target selector (cycles Auto -> each player -> Auto)
@@ -641,8 +805,8 @@ pcall(function()
         local fadeOut = TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
         local labels = { toastTitle, toastBody, toastHint }
 
-        TweenService:Create(toast, fadeIn, { BackgroundTransparency = 0.08 }):Play()
-        TweenService:Create(toastStroke, fadeIn, { Transparency = 0.2 }):Play()
+        TweenService:Create(toast, fadeIn, { BackgroundTransparency = 0.03 }):Play()
+        TweenService:Create(toastStroke, fadeIn, { Transparency = 0.1 }):Play()
         for _, lbl in ipairs(labels) do
             TweenService:Create(lbl, fadeIn, { TextTransparency = 0 }):Play()
         end
